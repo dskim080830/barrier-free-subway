@@ -483,7 +483,12 @@ async function fetchRealtimeArrival(stationName, lineLabel) {
 
     let filtered = rows;
     if (lineLabel) {
-      const targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[lineLabel];
+      // "수도권 7호선" → "7호선" 처럼 접두어를 떼고도 매핑을 시도
+      let targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[lineLabel];
+      if (!targetSubwayId) {
+        const coreName = lineLabel.replace(/^수도권\s*/, "");
+        targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[coreName];
+      }
       if (targetSubwayId) {
         filtered = rows.filter((r) => String(r.subwayId) === targetSubwayId);
       } else {
