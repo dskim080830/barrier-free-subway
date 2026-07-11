@@ -52,12 +52,12 @@ app.get("/api/elevator-status", (req, res) => {
 
 // 특정 역의 실시간 지하철 도착정보 (서울시 지하철 실시간 도착정보 일괄제공 API)
 app.get("/api/realtime-arrival", async (req, res) => {
-  const { station } = req.query;
+  const { station, line } = req.query;
   if (!station) {
     return res.status(400).json({ ok: false, reason: "station 파라미터(역명)가 필요합니다." });
   }
   try {
-    const arrivals = await fetchRealtimeArrival(baseStationName(station));
+    const arrivals = await fetchRealtimeArrival(baseStationName(station), line || undefined);
     res.json({ ok: true, station, mock: USE_MOCK, arrivals });
   } catch (err) {
     res.status(500).json({ ok: false, reason: err.message });
@@ -119,7 +119,7 @@ async function buildResponseFromOdsayPath(candidate) {
 
       // 실시간 도착정보는 "지금 이 역에서 열차를 기다리는" 출발역에만 붙입니다
       // (경유역까지 전부 조회하면 API 호출이 너무 많아짐).
-      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(name) : null;
+      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(name, candidate.segmentLineNames[0]) : null;
 
       return {
         id: null, // ODsay 경로는 우리 내부 역 id 체계 밖의 역을 포함할 수 있어 null
@@ -266,7 +266,7 @@ app.get("/api/route", async (req, res) => {
       }
 
       // 실시간 도착정보는 출발역에만 붙입니다.
-      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(baseStationName(station.name)) : null;
+      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(baseStationName(station.name), getLineLabel(result.segmentLines[0])) : null;
 
       return {
         id: stationId,

@@ -91,20 +91,23 @@ const SEOUL_FIELD_MAP = {
 // ⚠️ 추정 필드명: getFstExit(빠른하차정보) 응답 구조가 확인되면 이 맵만 고치면 됩니다.
 // data.go.kr 버전(FIELD_MAP.quickExit)과 동일한 의미의 필드를 서울열린데이터광장
 // 명명 규칙(대문자 스네이크케이스)으로 추정해두었습니다.
+// ✅ 2026-07 실제 응답으로 확인된 필드명 (getFstExit):
+// { qckgffMngNo, lineNm, stnCd, stnNm, stnNo, crtrYmd, upbdnbSe,
+//   drtnInfo, qckgffVhclDoorNo, plfmCmgFac, facNo, elvtrNo, fwkPstnNm, facPstnNm }
 const QUICK_EXIT_SEOUL_FIELD_MAP = {
-  stationName: "STN_NM", // 역명
-  lineName: "LINE_NM", // 호선명
-  doorField: "CAR_DOOR_NO", // "칸-문" 형식 추정 (예: "7-1")
-  targetFacility: "FAC_NM", // "엘리베이터" / "계단" 등 편의시설명
-  direction: "DRCT_NM", // 하차 후 진행 방면
+  stationName: "stnNm", // 역명
+  lineName: "lineNm", // 호선명 (예: "1호선")
+  doorField: "qckgffVhclDoorNo", // "칸-문" 형식 (예: "2-3")
+  targetFacility: "plfmCmgFac", // "에스컬레이터" / "엘리베이터" 등
+  direction: "drtnInfo", // 하차 후 진행 방면 (예: "남영")
 };
 
 // ⚠️ 추정 필드명: mtrWheelLift(휠체어리프트 설치현황) 응답 구조가 확인되면 이 맵만 고치면 됩니다.
 const LIFT_SEOUL_FIELD_MAP = {
-  stationName: "STN_NM", // 역명
-  lineName: "LINE_NM", // 호선명
-  installPosition: "INSTL_PSTN", // 설치 위치
-  operational: "USE_YN", // 가동상태 ("사용가능"이면 정상, 값 없으면 설치 자체를 "정상"으로 간주)
+  stationName: "SBWY_STNS_NM", // 역명 (예: "신설동(1)")
+  lineName: "LINE", // 호선명 (예: "1호선")
+  installPosition: "BGNG_DTL", // 설치 위치 설명 (예: "제기동 방면")
+  operational: "USE_YN", // 가동상태 (실제 응답에는 없을 수 있음 — 없으면 설치만으로 정상 간주)
 };
 
 /**
@@ -135,22 +138,62 @@ async function callSeoulOpenApiRaw(baseUrl, apiKey, serviceName, startIndex, end
     throw new Error(`서울열린데이터광장 API(${serviceName})가 JSON이 아닌 응답을 반환했습니다.`);
   }
 
+  // ── 응답 구조 자동 감지 ──
+  // 서울열린데이터광장 API는 서비스마다 응답 구조가 다릅니다:
+  //   A) 표준형: { 서비스명: { RESULT, list_total_count, row: [...] } }
+  //   B) data.go.kr 스타일: { response: { header, body: { items: { item: [...] } } } }
+  //   C) realtimeArrivalList형: { errorMessage: {...}, realtimeArrivalList: [...] }
+
+  // (A) 표준형
   const root = data[serviceName];
-  if (!root) {
-    console.error(`[seoulOpenApi][${serviceName}] 예상치 못한 응답 구조: ${JSON.stringify(data).slice(0, 500)}`);
-    throw new Error(`서울열린데이터광장 API(${serviceName}) 응답 구조가 예상과 다릅니다. (인증키/서비스명을 확인하세요)`);
+  if (root) {
+    const code = root.RESULT?.CODE;
+    if (code && code !== "INFO-000" && code !== "INFO-200") {
+      throw new Error(`서울열린데이터광장 API(${serviceName}) 오류: [${code}] ${root.RESULT?.MESSAGE}`);
+    }
+    return {
+      totalCount: Number(root.list_total_count || 0),
+      rows: root.row || [],
+    };
   }
 
-  const code = root.RESULT?.CODE;
-  // INFO-200은 "해당하는 데이터가 없습니다"로, 에러가 아니라 빈 결과이므로 통과시킵니다.
-  if (code && code !== "INFO-000" && code !== "INFO-200") {
-    throw new Error(`서울열린데이터광장 API(${serviceName}) 오류: [${code}] ${root.RESULT?.MESSAGE}`);
+  // (C) realtimeArrivalList형 (realtimeStationArrival 전용)
+  if (data.realtimeArrivalList) {
+    const errMsg = data.errorMessage;
+    if (errMsg && errMsg.code && errMsg.code !== "INFO-000" && errMsg.code !== "INFO-200") {
+      throw new Error(`서울열린데이터광장 API(${serviceName}) 오류: [${errMsg.code}] ${errMsg.message}`);
+    }
+    return {
+      totalCount: Number(errMsg?.total || data.realtimeArrivalList.length),
+      rows: data.realtimeArrivalList,
+    };
+  }
+  // errorMessage만 있고 realtimeArrivalList가 없는 경우 (결과 0건)
+  if (data.errorMessage) {
+    const errMsg = data.errorMessage;
+    if (errMsg.code === "INFO-200") {
+      return { totalCount: 0, rows: [] };
+    }
+    if (errMsg.code && errMsg.code !== "INFO-000") {
+      throw new Error(`서울열린데이터광장 API(${serviceName}) 오류: [${errMsg.code}] ${errMsg.message}`);
+    }
+    return { totalCount: 0, rows: [] };
   }
 
-  return {
-    totalCount: Number(root.list_total_count || 0),
-    rows: root.row || [],
-  };
+  // (B) data.go.kr 스타일
+  if (data.response) {
+    const header = data.response.header;
+    if (header?.resultCode && header.resultCode !== "00") {
+      throw new Error(`서울열린데이터광장 API(${serviceName}) 오류: [${header.resultCode}] ${header.resultMsg}`);
+    }
+    const items = data.response.body?.items;
+    const rows = Array.isArray(items) ? items : (items?.item || []);
+    const tc = Number(data.response.body?.totalCount || (Array.isArray(rows) ? rows.length : 0));
+    return { totalCount: tc, rows: Array.isArray(rows) ? rows : [] };
+  }
+
+  console.error(`[seoulOpenApi][${serviceName}] 예상치 못한 응답 구조: ${JSON.stringify(data).slice(0, 500)}`);
+  throw new Error(`서울열린데이터광장 API(${serviceName}) 응답 구조가 예상과 다릅니다. (인증키/서비스명을 확인하세요)`);
 }
 
 /** 기존 엘리베이터 가동현황(SeoulMetroFaciInfo) 호출 (하위 호환용 래퍼) */
@@ -248,21 +291,35 @@ async function fetchAllLiftRows() {
  * 별도의 가동상태 필드가 없을 수 있어, 있으면 사용하고 없으면 "설치되어
  * 있으면 정상"으로 간주합니다.
  */
+/** "신설동(1)" → "신설동" 처럼 API 응답의 역명에서 괄호 부기를 떼냅니다. */
+function stripLiftStationSuffix(name) {
+  return name.replace(/\(\d+\)$/, "").replace(/역$/, "").trim();
+}
+
 async function fetchLiftStatusAllSeoulNative(stationNames) {
   const rows = await fetchAllLiftRows();
   const f = LIFT_SEOUL_FIELD_MAP;
 
+  // 역명을 괄호 부기 제거한 형태로 그룹핑 (예: "신설동(1)" → "신설동")
   const byStation = new Map();
   for (const row of rows) {
-    const name = row[f.stationName];
-    if (!name) continue;
+    const rawName = row[f.stationName];
+    if (!rawName) continue;
+    const name = stripLiftStationSuffix(rawName);
     if (!byStation.has(name)) byStation.set(name, []);
     byStation.get(name).push(row);
   }
 
   const result = new Map();
   for (const stationName of stationNames) {
-    const rowsForStation = byStation.get(stationName) || [];
+    let rowsForStation = byStation.get(stationName) || [];
+    // "역" 접미사 유무 차이 대응 (예: 조회키 "왕십리역" vs API "왕십리")
+    if (rowsForStation.length === 0) {
+      rowsForStation = byStation.get(stationName.replace(/역$/, "")) || [];
+    }
+    if (rowsForStation.length === 0) {
+      rowsForStation = byStation.get(stationName + "역") || [];
+    }
     if (rowsForStation.length === 0) {
       const candidates = [...byStation.keys()].filter(
         (name) => name.includes(stationName) || stationName.includes(name)
@@ -368,8 +425,16 @@ async function fetchQuickExitInfoSeoul(stationName, lineLabel, { preferDirection
 }
 
 // ── 지하철 실시간 도착정보 (realtimeStationArrival) ───────────────────
-// ⚠️ 추정 필드명: 실제 응답 확인되면 여기만 고치면 됩니다. (Seoul Open API
-// realtimeStationArrival 서비스의 공식 문서 기준 필드명입니다)
+// 노선명 → subwayId 매핑 (실시간 도착정보 API의 subwayId 필드 기준)
+const LINE_LABEL_TO_SUBWAY_ID = {
+  "1호선": "1001", "2호선": "1002", "3호선": "1003", "4호선": "1004",
+  "5호선": "1005", "6호선": "1006", "7호선": "1007", "8호선": "1008",
+  "9호선": "1009", "경의중앙선": "1063", "공항철도": "1065",
+  "경춘선": "1067", "수인분당선": "1075", "신분당선": "1077",
+  "경강선": "1081", "우이신설선": "1092", "서해선": "1093",
+  "신림선": "1095", "GTX-A": "1032",
+};
+
 const REALTIME_ARRIVAL_FIELD_MAP = {
   lineName: "trainLineNm", // 예: "당고개행 - 신도림방면 일반열차"
   updnLine: "updnLine", // 상행/하행 구분
@@ -393,14 +458,14 @@ function findArrivalMessageByPattern(row) {
 /**
  * 특정 역의 실시간 지하철 도착정보를 가져옵니다.
  * @param {string} stationName - 역명 (예: "강남")
+ * @param {string} [lineLabel] - 노선명 (예: "4호선"). 지정하면 해당 노선 열차만 반환합니다.
  * @returns {Promise<Array<{lineName:string, updnLine:string, arrivalMessage:string, currentStatusMessage:string, destinationStation:string, trainStatus:string, updatedAt:string}>>}
  */
-async function fetchRealtimeArrival(stationName) {
+async function fetchRealtimeArrival(stationName, lineLabel) {
   if (!stationName) return [];
   if (USE_MOCK) return mockFetchRealtimeArrival(stationName);
 
   try {
-    // 0~20번째까지 조회 (상/하행 여러 편성이 섞여 오므로 넉넉하게 받아둡니다)
     const { rows } = await callSeoulOpenApiRaw(
       REALTIME_ARRIVAL_BASE_URL,
       REALTIME_ARRIVAL_API_KEY,
@@ -416,12 +481,21 @@ async function fetchRealtimeArrival(stationName) {
       console.warn(`[seoulOpenApi][realtimeStationArrival] "${stationName}" 도착정보 행이 0개입니다. (역명 표기 차이이거나 현재 운행시간이 아닐 수 있음)`);
     }
 
+    let filtered = rows;
+    if (lineLabel) {
+      const targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[lineLabel];
+      if (targetSubwayId) {
+        filtered = rows.filter((r) => String(r.subwayId) === targetSubwayId);
+      } else {
+        filtered = rows.filter((r) => String(r.trainLineNm || "").includes(lineLabel));
+      }
+      // 해당 노선 열차가 없으면 (심야 등) 다른 노선 열차를 보여주지 않음
+    }
+
     const f = REALTIME_ARRIVAL_FIELD_MAP;
-    return rows.map((r) => ({
+    return filtered.map((r) => ({
       lineName: r[f.lineName] ?? null,
       updnLine: r[f.updnLine] ?? null,
-      // ⚠️ 추정 필드명(arvlMsg2)으로 못 찾으면 "N분 후/전역/진입/도착" 같은
-      // 문구가 담긴 필드를 행 전체에서 찾아 대체합니다.
       arrivalMessage: r[f.arrivalMessage] ?? findArrivalMessageByPattern(r),
       currentStatusMessage: r[f.currentStatusMessage] ?? null,
       destinationStation: r[f.destinationStation] ?? null,
@@ -538,6 +612,20 @@ async function callDataGoKrApi(baseUrl, params) {
 async function fetchElevatorStatusAll(stationNames) {
   if (USE_MOCK) return mockFetchElevatorStatusAll(stationNames);
 
+  // 우선순위: 서울열린데이터광장(SeoulMetroFaciInfo) → data.go.kr 폴백
+  if (SEOUL_API_KEY) {
+    try {
+      return await fetchElevatorStatusAllSeoul(stationNames);
+    } catch (err) {
+      console.error(`[seoulOpenApi][Seoul] 엘리베이터 전체 조회 실패, data.go.kr로 폴백합니다:`, err.message);
+    }
+  }
+
+  if (!SERVICE_KEY || SERVICE_KEY.includes("여기에")) {
+    console.warn(`[seoulOpenApi] DATA_GO_KR_SERVICE_KEY가 설정되지 않았고 SEOUL_API_KEY도 없어서 엘리베이터 상태를 조회할 수 없습니다.`);
+    return new Map();
+  }
+
   const result = new Map();
   for (const stationName of stationNames) {
     try {
@@ -580,6 +668,11 @@ async function fetchLiftStatusAll(stationNames) {
     console.error(`[seoulOpenApi][mtrWheelLift] 리프트 전체 조회 실패, data.go.kr로 폴백합니다:`, err.message);
   }
 
+  if (!SERVICE_KEY || SERVICE_KEY.includes("여기에")) {
+    console.warn(`[seoulOpenApi] DATA_GO_KR_SERVICE_KEY가 설정되지 않아 리프트 data.go.kr 폴백도 건너뜁니다.`);
+    return new Map();
+  }
+
   const result = new Map();
   for (const stationName of stationNames) {
     try {
@@ -618,6 +711,10 @@ async function fetchQuickExitInfo(stationName, lineLabel, { preferDirection, exc
     if (info) return info;
   } catch (err) {
     console.error(`[seoulOpenApi][getFstExit] ${stationName} 빠른하차정보 조회 실패, data.go.kr로 폴백합니다:`, err.message);
+  }
+
+  if (!SERVICE_KEY || SERVICE_KEY.includes("여기에")) {
+    return null;
   }
 
   try {
