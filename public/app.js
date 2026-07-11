@@ -18,57 +18,17 @@ async function init() {
     .map((s) => `<option value="${s.name}"></option>`)
     .join("");
 
-  const mockSelect = $("#mock-station-select");
-  mockSelect.innerHTML = state.stations
-    .filter((s) => s.hasElevatorInstalled)
-    .map((s) => `<option value="${s.name}">${s.name}</option>`)
-    .join("");
-
-  const statusRes = await fetch("/api/elevator-status");
-  const statusData = await statusRes.json();
-  if (statusData.mock) $("#mock-panel").hidden = false;
-
   $("#find-route-btn").addEventListener("click", handleFindRoute);
   $("#swap-btn").addEventListener("click", () => {
     const a = $("#start-input").value;
     $("#start-input").value = $("#end-input").value;
     $("#end-input").value = a;
   });
-  $("#mock-break-btn").addEventListener("click", () => setMockBroken(true));
-  $("#mock-fix-btn").addEventListener("click", () => setMockBroken(false));
 
   for (const input of [$("#start-input"), $("#end-input")]) {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") handleFindRoute();
     });
-  }
-
-  $("#arrival-btn").addEventListener("click", handleArrivalLookup);
-  $("#arrival-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") handleArrivalLookup();
-  });
-}
-
-async function handleArrivalLookup() {
-  const stationName = $("#arrival-input").value.trim();
-  const listEl = $("#arrival-list");
-  if (!stationName) {
-    listEl.innerHTML = `<li class="arrival-item arrival-item--empty">역 이름을 입력해 주세요.</li>`;
-    return;
-  }
-
-  listEl.innerHTML = `<li class="arrival-item arrival-item--empty">조회 중...</li>`;
-
-  try {
-    const res = await fetch(`/api/realtime-arrival?station=${encodeURIComponent(stationName)}`);
-    const data = await res.json();
-    if (!data.ok) {
-      listEl.innerHTML = `<li class="arrival-item arrival-item--empty">조회 실패: ${data.reason}</li>`;
-      return;
-    }
-    listEl.innerHTML = renderArrivalItems(data.arrivals, stationName);
-  } catch (err) {
-    listEl.innerHTML = `<li class="arrival-item arrival-item--empty">조회 중 오류가 발생했습니다.</li>`;
   }
 }
 
@@ -88,19 +48,6 @@ function renderArrivalItems(arrivals, stationName) {
       `
     )
     .join("");
-}
-
-async function setMockBroken(broken) {
-  const stationName = $("#mock-station-select").value;
-  const res = await fetch("/api/mock/set-broken", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ stationName, broken }),
-  });
-  const data = await res.json();
-  $("#mock-status").textContent = data.ok
-    ? `${stationName} 엘리베이터를 "${broken ? "고장" : "정상"}"으로 표시했습니다. 경로를 다시 찾아보세요.`
-    : `실패: ${data.reason}`;
 }
 
 function showError(message) {

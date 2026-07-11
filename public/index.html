@@ -43,32 +43,6 @@
       <p id="search-error" class="search-error" role="alert" hidden></p>
     </section>
 
-    <section class="search-card" aria-label="실시간 도착정보 조회">
-      <div class="search-row">
-        <div class="field">
-          <label for="arrival-input">실시간 도착정보 조회할 역</label>
-          <input id="arrival-input" list="station-list" placeholder="예: 강남" autocomplete="off" />
-        </div>
-        <button id="arrival-btn" class="primary-btn" type="button">실시간 도착정보 조회</button>
-      </div>
-      <ul id="arrival-list" class="arrival-list" aria-live="polite"></ul>
-    </section>
-
-    <section id="mock-panel" class="mock-panel" hidden>
-      <h2 class="mock-panel__title">시연 도구 (mock 모드)</h2>
-      <p class="mock-panel__desc">
-        아직 공공데이터 API 키를 등록하지 않아 목(mock) 데이터로 동작 중입니다.
-        아래에서 특정 역의 엘리베이터를 "고장"으로 만들어 BFS가 그 역을 피해
-        우회 경로를 찾는지 확인해 보세요.
-      </p>
-      <div class="mock-panel__controls">
-        <select id="mock-station-select"></select>
-        <button id="mock-break-btn" class="ghost-btn" type="button">고장으로 표시</button>
-        <button id="mock-fix-btn" class="ghost-btn" type="button">정상으로 복구</button>
-      </div>
-      <p id="mock-status" class="mock-status" aria-live="polite"></p>
-    </section>
-
     <section id="result-section" class="result-section" hidden aria-live="polite">
       <div id="route-note" class="route-note" hidden></div>
       <div id="route-summary" class="route-summary"></div>
