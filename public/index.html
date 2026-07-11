@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>계단 없는 길 | 배리어프리 지하철 환승 경로</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="skip-link"><a href="#main">본문 바로가기</a></div>
+
+  <header class="hero">
+    <div class="hero__eyebrow">팀 태양 · BFS 기반 교통약자 환승 경로 서비스</div>
+    <h1 class="hero__title">계단 없는 길</h1>
+    <p class="hero__desc">
+      휠체어·전동휠체어 이용자를 위해 <strong>엘리베이터가 있는 역만</strong> 골라
+      최소 정차역 경로를 찾고, 내려서 <strong>어느 칸 몇 번 문</strong>으로 가야
+      엘리베이터가 가장 가까운지까지 안내합니다.
+    </p>
+  </header>
+
+  <main id="main">
+    <section class="search-card" aria-label="경로 검색">
+      <div class="search-row">
+        <div class="field">
+          <label for="start-input">출발역</label>
+          <input id="start-input" list="station-list" placeholder="예: 왕십리" autocomplete="off" />
+        </div>
+
+        <button id="swap-btn" class="swap-btn" type="button" aria-label="출발역과 도착역 바꾸기">⇅</button>
+
+        <div class="field">
+          <label for="end-input">도착역</label>
+          <input id="end-input" list="station-list" placeholder="예: 강남" autocomplete="off" />
+        </div>
+
+        <datalist id="station-list"></datalist>
+
+        <button id="find-route-btn" class="primary-btn" type="button">배리어프리 경로 찾기</button>
+      </div>
+      <p id="search-error" class="search-error" role="alert" hidden></p>
+    </section>
+
+    <section class="search-card" aria-label="실시간 도착정보 조회">
+      <div class="search-row">
+        <div class="field">
+          <label for="arrival-input">실시간 도착정보 조회할 역</label>
+          <input id="arrival-input" list="station-list" placeholder="예: 강남" autocomplete="off" />
+        </div>
+        <button id="arrival-btn" class="primary-btn" type="button">실시간 도착정보 조회</button>
+      </div>
+      <ul id="arrival-list" class="arrival-list" aria-live="polite"></ul>
+    </section>
+
+    <section id="mock-panel" class="mock-panel" hidden>
+      <h2 class="mock-panel__title">시연 도구 (mock 모드)</h2>
+      <p class="mock-panel__desc">
+        아직 공공데이터 API 키를 등록하지 않아 목(mock) 데이터로 동작 중입니다.
+        아래에서 특정 역의 엘리베이터를 "고장"으로 만들어 BFS가 그 역을 피해
+        우회 경로를 찾는지 확인해 보세요.
+      </p>
+      <div class="mock-panel__controls">
+        <select id="mock-station-select"></select>
+        <button id="mock-break-btn" class="ghost-btn" type="button">고장으로 표시</button>
+        <button id="mock-fix-btn" class="ghost-btn" type="button">정상으로 복구</button>
+      </div>
+      <p id="mock-status" class="mock-status" aria-live="polite"></p>
+    </section>
+
+    <section id="result-section" class="result-section" hidden aria-live="polite">
+      <div id="route-note" class="route-note" hidden></div>
+      <div id="route-summary" class="route-summary"></div>
+      <ol id="route-timeline" class="route-timeline"></ol>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>
+      엘리베이터 실시간 가동상태: 서울교통공사_편의시설위치정보 ·
+      휠체어리프트 설치현황: 서울교통공사_휠체어리프트 설치현황(mtrWheelLift) ·
+      최단 탑승 위치: 서울시 빠른하차정보 현황(getFstExit) ·
+      실시간 열차 도착정보: 서울시 지하철 실시간 도착정보(realtimeStationArrival)
+      (서울열린데이터광장)
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
