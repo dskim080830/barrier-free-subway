@@ -119,7 +119,8 @@ async function buildResponseFromOdsayPath(candidate) {
 
       // 실시간 도착정보는 "지금 이 역에서 열차를 기다리는" 출발역에만 붙입니다
       // (경유역까지 전부 조회하면 API 호출이 너무 많아짐).
-      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(name, candidate.segmentLineNames[0]) : null;
+      const nextStopName = idx === 0 && candidate.stops.length > 1 ? baseStationName(candidate.stops[1].name) : undefined;
+      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(name, candidate.segmentLineNames[0], nextStopName) : null;
 
       return {
         id: null, // ODsay 경로는 우리 내부 역 id 체계 밖의 역을 포함할 수 있어 null
@@ -266,7 +267,8 @@ app.get("/api/route", async (req, res) => {
       }
 
       // 실시간 도착정보는 출발역에만 붙입니다.
-      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(baseStationName(station.name), getLineLabel(result.segmentLines[0])) : null;
+      const nextStopHint = idx === 0 && result.path.length > 1 ? baseStationName(getStationName(result.path[1])) : undefined;
+      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(baseStationName(station.name), getLineLabel(result.segmentLines[0]), nextStopHint) : null;
 
       return {
         id: stationId,

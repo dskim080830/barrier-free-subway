@@ -37,15 +37,22 @@ function renderArrivalItems(arrivals, stationName) {
   if (!arrivals || arrivals.length === 0) {
     return `<li class="arrival-item arrival-item--empty">"${stationName}"의 실시간 도착정보가 없습니다.</li>`;
   }
-  return arrivals
+  const items = arrivals.slice(0, Math.max(2, arrivals.length));
+  return items
     .map(
-      (a) => `
+      (a) => {
+        const line = a.lineName || a.updnLine || "";
+        const dest = a.destinationStation ? `→ ${a.destinationStation}행` : "";
+        const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
+        const time = a.remainingSeconds != null
+          ? (a.remainingSeconds <= 0 ? "곧 도착" : `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`)
+          : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
+        return `
         <li class="arrival-item">
-          <span class="arrival-item__line">🚇 ${a.lineName || a.updnLine || ""}</span>
-          <span class="arrival-item__msg">${a.arrivalMessage || a.currentStatusMessage || "정보 없음"}</span>
-          ${a.destinationStation ? `<span class="arrival-item__dest">→ ${a.destinationStation}행</span>` : ""}
-        </li>
-      `
+          <span class="arrival-item__line">🚇 ${line} ${dest}</span>
+          <span class="arrival-item__msg">${time} ${pos}</span>
+        </li>`;
+      }
     )
     .join("");
 }

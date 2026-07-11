@@ -459,11 +459,11 @@ function findArrivalMessageByPattern(row) {
  * 특정 역의 실시간 지하철 도착정보를 가져옵니다.
  * @param {string} stationName - 역명 (예: "강남")
  * @param {string} [lineLabel] - 노선명 (예: "4호선"). 지정하면 해당 노선 열차만 반환합니다.
- * @returns {Promise<Array<{lineName:string, updnLine:string, arrivalMessage:string, currentStatusMessage:string, destinationStation:string, trainStatus:string, updatedAt:string}>>}
+ * @param {string} [directionHint] - 진행 방향 힌트 (다음 역명). 지정하면 해당 방면 열차만 반환합니다.
  */
-async function fetchRealtimeArrival(stationName, lineLabel) {
+async function fetchRealtimeArrival(stationName, lineLabel, directionHint) {
   if (!stationName) return [];
-  if (USE_MOCK) return mockFetchRealtimeArrival(stationName);
+  if (USE_MOCK) return mockFetchRealtimeArrival(stationName, directionHint);
 
   try {
     const { rows } = await callSeoulOpenApiRaw(
@@ -471,19 +471,20 @@ async function fetchRealtimeArrival(stationName, lineLabel) {
       REALTIME_ARRIVAL_API_KEY,
       REALTIME_ARRIVAL_SERVICE,
       0,
-      20,
+      50,
       [stationName]
     );
 
     if (rows.length > 0) {
       console.log(`[seoulOpenApi][DEBUG][realtimeStationArrival] "${stationName}" 첫 row 예시:`, rows[0]);
     } else {
-      console.warn(`[seoulOpenApi][realtimeStationArrival] "${stationName}" 도착정보 행이 0개입니다. (역명 표기 차이이거나 현재 운행시간이 아닐 수 있음)`);
+      console.warn(`[seoulOpenApi][realtimeStationArrival] "${stationName}" 도착정보 행이 0개입니다.`);
     }
 
     let filtered = rows;
+
+    // 노선 필터
     if (lineLabel) {
-      // "수도권 7호선" → "7호선" 처럼 접두어를 떼고도 매핑을 시도
       let targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[lineLabel];
       if (!targetSubwayId) {
         const coreName = lineLabel.replace(/^수도권\s*/, "");
@@ -494,7 +495,15 @@ async function fetchRealtimeArrival(stationName, lineLabel) {
       } else {
         filtered = rows.filter((r) => String(r.trainLineNm || "").includes(lineLabel));
       }
-      // 해당 노선 열차가 없으면 (심야 등) 다른 노선 열차를 보여주지 않음
+    }
+
+    // 방향 필터: trainLineNm에 "가산디지털단지방면" 같은 방향 정보가 포함됨
+    if (directionHint && filtered.length > 0) {
+      const dirFiltered = filtered.filter((r) => {
+        const desc = String(r.trainLineNm || "");
+        return desc.includes(directionHint);
+      });
+      if (dirFiltered.length > 0) filtered = dirFiltered;
     }
 
     const f = REALTIME_ARRIVAL_FIELD_MAP;
@@ -503,6 +512,8 @@ async function fetchRealtimeArrival(stationName, lineLabel) {
       updnLine: r[f.updnLine] ?? null,
       arrivalMessage: r[f.arrivalMessage] ?? findArrivalMessageByPattern(r),
       currentStatusMessage: r[f.currentStatusMessage] ?? null,
+      currentStation: r.arvlMsg3 ?? null,
+      remainingSeconds: r.barvlDt ? Number(r.barvlDt) : null,
       destinationStation: r[f.destinationStation] ?? null,
       trainStatus: r[f.trainStatus] ?? null,
       updatedAt: r[f.updatedAt] ?? null,
@@ -514,24 +525,29 @@ async function fetchRealtimeArrival(stationName, lineLabel) {
 }
 
 /** 목(mock) 실시간 도착정보: API 키 없이도 데모용으로 그럴듯한 값을 만듭니다. */
-async function mockFetchRealtimeArrival(stationName) {
+async function mockFetchRealtimeArrival(stationName, directionHint) {
   const minutesAhead = (stationName.length % 5) + 1;
+  const dir = directionHint || "종착역";
   return [
     {
-      lineName: "상행 · 일반열차",
+      lineName: `${dir}방면 · 일반열차`,
       updnLine: "상행",
-      arrivalMessage: `${minutesAhead}분 후 (${stationName} 도착)`,
+      arrivalMessage: `${minutesAhead}분 후`,
       currentStatusMessage: minutesAhead <= 1 ? "전역 도착" : "운행 중",
-      destinationStation: "종착역(mock)",
+      currentStation: `${stationName} ${minutesAhead <= 1 ? "도착" : "2전역 출발"}`,
+      remainingSeconds: minutesAhead * 60,
+      destinationStation: `${dir}(mock)`,
       trainStatus: "일반",
       updatedAt: new Date().toISOString(),
     },
     {
-      lineName: "하행 · 일반열차",
-      updnLine: "하행",
-      arrivalMessage: `${minutesAhead + 2}분 후 (${stationName} 도착)`,
+      lineName: `${dir}방면 · 일반열차`,
+      updnLine: "상행",
+      arrivalMessage: `${minutesAhead + 3}분 후`,
       currentStatusMessage: "운행 중",
-      destinationStation: "종착역(mock)",
+      currentStation: `${stationName} 4전역 출발`,
+      remainingSeconds: (minutesAhead + 3) * 60,
+      destinationStation: `${dir}(mock)`,
       trainStatus: "일반",
       updatedAt: new Date().toISOString(),
     },
