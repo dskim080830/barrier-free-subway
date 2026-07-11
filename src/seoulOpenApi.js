@@ -280,7 +280,11 @@ async function fetchLiftStatusAllSeoulNative(stationNames) {
       return val && !String(val).includes("사용가능");
     });
 
+    // ⚠️ installed는 "이 역에 리프트 행이 실제로 있었는지"로만 판단합니다.
+    // (static 데이터의 hasLiftInstalled는 CSV에 해당 컬럼이 없어 항상 false라
+    //  더 이상 설치여부 판단에 쓰지 않고, 이 실시간 API 결과가 유일한 기준입니다.)
     result.set(stationName, {
+      installed: rowsForStation.length > 0,
       operational: rowsForStation.length > 0 ? broken.length < rowsForStation.length : false,
       brokenFacilities: broken.map((r) => r[f.installPosition] || "휠체어리프트"),
     });
@@ -299,6 +303,15 @@ async function fetchAllQuickExitRows() {
   if (quickExitRowsCache) return quickExitRowsCache;
   quickExitRowsCache = await fetchAllSeoulRows(SEOUL_BASE_URL, QUICK_EXIT_SEOUL_API_KEY, QUICK_EXIT_SEOUL_SERVICE);
   return quickExitRowsCache;
+}
+
+/** 행(row) 전체를 훑어서 "칸-문" 형식(예: "7-1")의 값을 가진 필드를 찾아냅니다. */
+function findDoorFieldByPattern(row) {
+  for (const key of Object.keys(row)) {
+    const val = row[key];
+    if (typeof val === "string" && /^\d{1,2}\s*-\s*\d{1,2}$/.test(val.trim())) return val;
+  }
+  return null;
 }
 
 async function fetchQuickExitInfoSeoul(stationName, lineLabel, { preferDirection, excludeDirection } = {}) {
@@ -336,7 +349,12 @@ async function fetchQuickExitInfoSeoul(stationName, lineLabel, { preferDirection
   }
   if (!chosen) chosen = records[0];
 
-  const { carNumber, doorNumber } = parseCarDoor(chosen[f.doorField]);
+  // ⚠️ 추정 필드명(QUICK_EXIT_SEOUL_FIELD_MAP.doorField)으로 못 찾으면, 값
+  // 패턴("숫자-숫자")으로 행 전체를 스캔해서 대체합니다. 실제 필드명을 확인하면
+  // QUICK_EXIT_SEOUL_FIELD_MAP.doorField를 정확히 채워서 이 fallback 없이도
+  // 바로 찾도록 고쳐주세요.
+  const doorRaw = chosen[f.doorField] || findDoorFieldByPattern(chosen);
+  const { carNumber, doorNumber } = parseCarDoor(doorRaw);
   const direction = chosen[f.direction] ?? null;
   const icon = facilityLabel === "엘리베이터" ? "♿" : "🦽";
 
@@ -363,6 +381,15 @@ const REALTIME_ARRIVAL_FIELD_MAP = {
   updatedAt: "recptnDt", // 수신 시각
 };
 
+/** 행(row) 전체를 훑어서 "N분 후" 같은 도착 안내 문구가 담긴 필드를 찾아냅니다. */
+function findArrivalMessageByPattern(row) {
+  for (const key of Object.keys(row)) {
+    const val = row[key];
+    if (typeof val === "string" && /(분\s*후|전역|진입|도착|출발)/.test(val)) return val;
+  }
+  return null;
+}
+
 /**
  * 특정 역의 실시간 지하철 도착정보를 가져옵니다.
  * @param {string} stationName - 역명 (예: "강남")
@@ -385,13 +412,17 @@ async function fetchRealtimeArrival(stationName) {
 
     if (rows.length > 0) {
       console.log(`[seoulOpenApi][DEBUG][realtimeStationArrival] "${stationName}" 첫 row 예시:`, rows[0]);
+    } else {
+      console.warn(`[seoulOpenApi][realtimeStationArrival] "${stationName}" 도착정보 행이 0개입니다. (역명 표기 차이이거나 현재 운행시간이 아닐 수 있음)`);
     }
 
     const f = REALTIME_ARRIVAL_FIELD_MAP;
     return rows.map((r) => ({
       lineName: r[f.lineName] ?? null,
       updnLine: r[f.updnLine] ?? null,
-      arrivalMessage: r[f.arrivalMessage] ?? null,
+      // ⚠️ 추정 필드명(arvlMsg2)으로 못 찾으면 "N분 후/전역/진입/도착" 같은
+      // 문구가 담긴 필드를 행 전체에서 찾아 대체합니다.
+      arrivalMessage: r[f.arrivalMessage] ?? findArrivalMessageByPattern(r),
       currentStatusMessage: r[f.currentStatusMessage] ?? null,
       destinationStation: r[f.destinationStation] ?? null,
       trainStatus: r[f.trainStatus] ?? null,
@@ -564,6 +595,7 @@ async function fetchLiftStatusAll(stationNames) {
       const broken = liftRecords.filter((it) => String(it[f.operational] || "").includes("고장"));
 
       result.set(stationName, {
+        installed: liftRecords.length > 0,
         operational: liftRecords.length > 0 ? broken.length < liftRecords.length : false,
         brokenFacilities: broken.map((it) => it[f.facilityType]),
       });
@@ -664,7 +696,7 @@ async function mockFetchElevatorStatusAll(stationNames) {
 async function mockFetchLiftStatusAll(stationNames) {
   const result = new Map();
   for (const name of stationNames) {
-    result.set(name, { operational: true, brokenFacilities: [] });
+    result.set(name, { installed: true, operational: true, brokenFacilities: [] });
   }
   return result;
 }

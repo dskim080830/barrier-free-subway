@@ -8,7 +8,7 @@ const liftCache = new Map(); // 휠체어리프트
 // 최초에는 모두 "정상"으로 간주 (설치 여부는 graph.js 의 hasElevatorInstalled/hasLiftInstalled 가 별도로 판단)
 for (const s of STATIONS) {
   cache.set(s.id, { operational: true, brokenFacilities: [], updatedAt: 0 });
-  liftCache.set(s.id, { operational: true, brokenFacilities: [], updatedAt: 0 });
+  liftCache.set(s.id, { installed: false, operational: true, brokenFacilities: [], updatedAt: 0 });
 }
 
 async function refresh() {
@@ -19,6 +19,10 @@ async function refresh() {
   // ⚠️ "양재(서초구청)"처럼 부기가 붙은 역명은 API가 못 알아들어서, 조회용
   // 키는 괄호를 뗀 기본 역명으로 묶습니다 (여러 station id가 같은 기본
   // 역명을 공유할 수 있음 — 그럼 API 호출도 자연히 줄어듭니다).
+  // ⚠️ 리프트는 CSV(data/stations*.js)에 hasLiftInstalled 컬럼이 없어 정적
+  // 데이터가 항상 false입니다. 그래서 리프트는 static 플래그로 미리 거르지
+  // 않고 "모든 역"에 대해 mtrWheelLift 실시간 API를 조회해서, 설치여부까지
+  // 그 응답만으로 판단합니다(더 이상 static hasLiftInstalled를 신뢰하지 않음).
   const elevatorBaseNameToIds = new Map();
   const liftBaseNameToIds = new Map();
   for (const s of STATIONS) {
@@ -27,10 +31,8 @@ async function refresh() {
       if (!elevatorBaseNameToIds.has(base)) elevatorBaseNameToIds.set(base, []);
       elevatorBaseNameToIds.get(base).push(s.id);
     }
-    if (s.hasLiftInstalled) {
-      if (!liftBaseNameToIds.has(base)) liftBaseNameToIds.set(base, []);
-      liftBaseNameToIds.get(base).push(s.id);
-    }
+    if (!liftBaseNameToIds.has(base)) liftBaseNameToIds.set(base, []);
+    liftBaseNameToIds.get(base).push(s.id);
   }
 
   const now = Date.now();

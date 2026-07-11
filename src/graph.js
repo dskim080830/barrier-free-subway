@@ -57,9 +57,14 @@ function findBarrierFreeRoute(startId, endId, elevatorStatus, liftStatus) {
     }
 
     // 엘리베이터가 없거나 고장이어도, 휠체어리프트가 설치되어 있고 정상이면 이용 가능
-    if (station.hasLiftInstalled) {
-      const liveLift = liftStatus ? liftStatus.get(stationId) : null;
-      if (!liveLift || liveLift.operational !== false) return true;
+    // ⚠️ static station.hasLiftInstalled는 CSV에 컬럼이 없어 항상 false이므로,
+    // 실시간 리프트 캐시(liftStatus)가 있으면 그 installed 값을 우선 신뢰하고,
+    // 캐시 자체가 없을 때만(예: 최초 기동 직후) static 플래그로 폴백합니다.
+    const liveLift = liftStatus ? liftStatus.get(stationId) : null;
+    const liftInstalled = liveLift ? Boolean(liveLift.installed) : Boolean(station.hasLiftInstalled);
+    if (liftInstalled) {
+      const liftOperational = liveLift ? liveLift.operational !== false : true;
+      if (liftOperational) return true;
     }
 
     return false;

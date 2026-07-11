@@ -41,8 +41,10 @@ app.get("/api/elevator-status", (req, res) => {
       operational: s.hasElevatorInstalled ? !!live?.operational : false,
       brokenFacilities: live?.brokenFacilities || [],
       updatedAt: live?.updatedAt || 0,
-      hasLiftInstalled: Boolean(s.hasLiftInstalled),
-      liftOperational: s.hasLiftInstalled ? !!liveLift?.operational : false,
+      // ⚠️ 리프트 설치여부는 더 이상 static 데이터(s.hasLiftInstalled, 항상 false)가
+      // 아니라 mtrWheelLift 실시간 API 결과(liveLift.installed)를 기준으로 판단합니다.
+      hasLiftInstalled: Boolean(liveLift?.installed),
+      liftOperational: liveLift?.installed ? !!liveLift?.operational : false,
     };
   }
   res.json({ mock: USE_MOCK, stations: out });
@@ -79,7 +81,7 @@ async function checkOdsayPathAccessible(candidate) {
     const elevatorStatus = elevatorMap.get(name);
     const liftStatus = liftMap.get(name);
     const elevatorOk = !elevatorStatus || elevatorStatus.operational !== false;
-    const liftOk = !liftStatus || liftStatus.operational !== false;
+    const liftOk = !liftStatus ? true : Boolean(liftStatus.installed) && liftStatus.operational !== false;
     if (!elevatorOk && !liftOk) blocked.push(name);
   }
   return blocked;
@@ -130,7 +132,7 @@ async function buildResponseFromOdsayPath(candidate) {
           operational: elevatorStatus ? elevatorStatus.operational !== false : null,
         },
         lift: {
-          installed: liftStatus ? true : null,
+          installed: liftStatus ? Boolean(liftStatus.installed) : null,
           operational: liftStatus ? liftStatus.operational !== false : null,
         },
         isTransfer: Boolean(checkpoint && checkpoint.role === "transfer"),
@@ -277,8 +279,10 @@ app.get("/api/route", async (req, res) => {
           operational: station.hasElevatorInstalled ? live?.operational !== false : false,
         },
         lift: {
-          installed: Boolean(station.hasLiftInstalled),
-          operational: station.hasLiftInstalled ? liveLift?.operational !== false : false,
+          // ⚠️ static station.hasLiftInstalled는 CSV에 컬럼이 없어 항상 false이므로,
+          // mtrWheelLift 실시간 캐시(liveLift.installed)를 설치여부의 유일한 기준으로 씁니다.
+          installed: Boolean(liveLift?.installed),
+          operational: liveLift?.installed ? liveLift?.operational !== false : false,
         },
         isTransfer: result.transfers.some((t) => t.stationId === stationId),
         quickExit, // { facility, carNumber, doorNumber, direction, note } | null (출발/도착역만 값이 들어옴)
