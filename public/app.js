@@ -17,12 +17,19 @@ async function init() {
   state.lineMeta = data.lineMeta;
   state.nameToId = new Map(state.stations.map((s) => [s.name, s.id]));
 
-  const linesByName = new Map();
+  function stripSuffix(name) {
+    let s = name.replace(/\([^)]*\)\s*$/, "").trim();
+    if (s.length > 1 && s.endsWith("역")) s = s.slice(0, -1);
+    return s;
+  }
+
+  const linesByBase = new Map();
   for (const s of state.stations) {
-    if (!linesByName.has(s.name)) linesByName.set(s.name, new Set());
+    const base = stripSuffix(s.name);
+    if (!linesByBase.has(base)) linesByBase.set(base, new Set());
     for (const l of s.lines) {
       const meta = state.lineMeta[l];
-      if (meta) linesByName.get(s.name).add(meta.name);
+      if (meta) linesByBase.get(base).add(meta.name);
     }
   }
 
@@ -30,12 +37,14 @@ async function init() {
   const seen = new Set();
   datalist.innerHTML = state.stations
     .filter((s) => {
-      if (seen.has(s.name)) return false;
-      seen.add(s.name);
+      const base = stripSuffix(s.name);
+      if (seen.has(base)) return false;
+      seen.add(base);
       return true;
     })
     .map((s) => {
-      const lines = linesByName.get(s.name);
+      const base = stripSuffix(s.name);
+      const lines = linesByBase.get(base);
       const lineLabel = lines && lines.size > 0 ? ` (${[...lines].join(", ")})` : "";
       return `<option value="${s.name}" label="${s.name}${lineLabel}"></option>`;
     })
@@ -236,7 +245,7 @@ function renderResult(data) {
                 ${badge.text}
               </span>
             </div>
-            ${stop.quickExit ? `<div class="quick-exit">🚪 ${stop.quickExit.note || `${stop.quickExit.carNumber}번째 칸 ${stop.quickExit.doorNumber}번 문 쪽이 가장 가깝습니다.`}</div>` : ""}
+            ${stop.quickExit ? `<div class="quick-exit">🚪 ${(stop.quickExit.note || `${stop.quickExit.carNumber}번째 칸 ${stop.quickExit.doorNumber}번 문 쪽이 가장 가깝습니다.`).replace("하차 시", isFirst ? "승차 시" : "하차 시")}</div>` : ""}
             ${arrivalSection}
           </div>
         </li>

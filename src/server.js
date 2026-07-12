@@ -118,18 +118,8 @@ async function buildResponseFromOdsayPath(candidate) {
         quickExit = await fetchQuickExitInfo(name, lineForLookup, directionOptions);
       }
 
-      // 출발역 + 환승역에서 실시간 도착정보를 가져옴
-      let realtimeArrival = null;
       const isBoard = idx === 0;
       const isTransfer = Boolean(checkpoint && checkpoint.role === "transfer");
-      if (isBoard || isTransfer) {
-        const lineForArrival = isBoard
-          ? candidate.segmentLineNames[0]
-          : checkpoint.toLine;
-        const nextIdx = idx + 1;
-        const nextStop = nextIdx < candidate.stops.length ? baseStationName(candidate.stops[nextIdx].name) : undefined;
-        realtimeArrival = await fetchRealtimeArrival(name, lineForArrival, nextStop);
-      }
 
       let arrivalMeta = null;
       if (isBoard || isTransfer) {
@@ -154,7 +144,6 @@ async function buildResponseFromOdsayPath(candidate) {
         lineName: lineForColor,
         lat: s.lat,
         lng: s.lng,
-        realtimeArrival,
         arrivalMeta,
         elevator: {
           installed: elevatorStatus ? true : null,
@@ -294,18 +283,8 @@ app.get("/api/route", async (req, res) => {
         quickExit = await fetchQuickExitInfo(baseStationName(station.name), getLineLabel(lineForLookup), directionOptions);
       }
 
-      // 출발역 + 환승역에서 실시간 도착정보를 가져옴
-      let realtimeArrival = null;
       const isBoard = idx === 0;
       const isTransferStop = result.transfers.some((t) => t.stationId === stationId);
-      if (isBoard || isTransferStop) {
-        const lineForArrival = isBoard
-          ? getLineLabel(result.segmentLines[0])
-          : getLineLabel(result.segmentLines[idx]);
-        const nextIdx = idx + 1;
-        const nextStopHint = nextIdx < result.path.length ? baseStationName(getStationName(result.path[nextIdx])) : undefined;
-        realtimeArrival = await fetchRealtimeArrival(baseStationName(station.name), lineForArrival, nextStopHint);
-      }
 
       let arrivalMeta = null;
       if (isBoard || isTransferStop) {
@@ -334,7 +313,6 @@ app.get("/api/route", async (req, res) => {
         lineName: lineForLabel,
         lat: station.lat,
         lng: station.lng,
-        realtimeArrival,
         arrivalMeta,
         elevator: {
           installed: station.hasElevatorInstalled,

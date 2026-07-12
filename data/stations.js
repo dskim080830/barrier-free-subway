@@ -44,7 +44,7 @@ const LINE_META = {
   "I4102": { name: "1호선", color: "#0052A4" },
   "I4103": { name: "안산과천선", color: "#4A90D9" },
   "I4104": { name: "진접선", color: "#8FBC8F" },
-  "I4105": { name: "분당선", color: "#FABE00" },
+  "I4105": { name: "수인분당선", color: "#FABE00" },
   "I4106": { name: "일산선", color: "#7B68EE" },
   "I4108": { name: "경의중앙선", color: "#77C4A3" },
   "I41K2": { name: "경춘선", color: "#0C8E72" },

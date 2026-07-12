@@ -162,7 +162,9 @@ function getLineLabel(lineKey) {
  * 표시용 전체 이름과 API 조회용 이름을 분리해서 써야 합니다.
  */
 function baseStationName(name) {
-  return String(name || "").replace(/\([^)]*\)\s*$/, "").trim();
+  let s = String(name || "").replace(/\([^)]*\)\s*$/, "").trim();
+  if (s.length > 1 && s.endsWith("역")) s = s.slice(0, -1);
+  return s;
 }
 
 module.exports = {
