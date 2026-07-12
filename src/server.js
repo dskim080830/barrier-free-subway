@@ -57,7 +57,8 @@ app.get("/api/realtime-arrival", async (req, res) => {
     return res.status(400).json({ ok: false, reason: "station 파라미터(역명)가 필요합니다." });
   }
   try {
-    const arrivals = await fetchRealtimeArrival(baseStationName(station), line || undefined);
+    const { direction } = req.query;
+    const arrivals = await fetchRealtimeArrival(baseStationName(station), line || undefined, direction || undefined);
     res.json({ ok: true, station, mock: USE_MOCK, arrivals });
   } catch (err) {
     res.status(500).json({ ok: false, reason: err.message });
@@ -117,19 +118,37 @@ async function buildResponseFromOdsayPath(candidate) {
         quickExit = await fetchQuickExitInfo(name, lineForLookup, directionOptions);
       }
 
-      // 실시간 도착정보는 "지금 이 역에서 열차를 기다리는" 출발역에만 붙입니다
-      // (경유역까지 전부 조회하면 API 호출이 너무 많아짐).
-      const nextStopName = idx === 0 && candidate.stops.length > 1 ? baseStationName(candidate.stops[1].name) : undefined;
-      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(name, candidate.segmentLineNames[0], nextStopName) : null;
+      // 출발역 + 환승역에서 실시간 도착정보를 가져옴
+      let realtimeArrival = null;
+      const isBoard = idx === 0;
+      const isTransfer = Boolean(checkpoint && checkpoint.role === "transfer");
+      if (isBoard || isTransfer) {
+        const lineForArrival = isBoard
+          ? candidate.segmentLineNames[0]
+          : checkpoint.toLine;
+        const nextIdx = idx + 1;
+        const nextStop = nextIdx < candidate.stops.length ? baseStationName(candidate.stops[nextIdx].name) : undefined;
+        realtimeArrival = await fetchRealtimeArrival(name, lineForArrival, nextStop);
+      }
+
+      // 프론트 폴링용: 출발역/환승역에 어떤 노선·방향으로 조회했는지 기록
+      let arrivalMeta = null;
+      if (isBoard || isTransfer) {
+        const lineForArrival = isBoard ? candidate.segmentLineNames[0] : checkpoint.toLine;
+        const nextIdx = idx + 1;
+        const nextStop = nextIdx < candidate.stops.length ? baseStationName(candidate.stops[nextIdx].name) : undefined;
+        arrivalMeta = { line: lineForArrival, direction: nextStop };
+      }
 
       return {
-        id: null, // ODsay 경로는 우리 내부 역 id 체계 밖의 역을 포함할 수 있어 null
+        id: null,
         name: s.name,
         lat: s.lat,
         lng: s.lng,
         realtimeArrival,
+        arrivalMeta,
         elevator: {
-          installed: elevatorStatus ? true : null, // null = 실시간 데이터 조회 실패(확인 불가), true = 데이터 있음
+          installed: elevatorStatus ? true : null,
           operational: elevatorStatus ? elevatorStatus.operational !== false : null,
         },
         lift: {
@@ -266,9 +285,28 @@ app.get("/api/route", async (req, res) => {
         quickExit = await fetchQuickExitInfo(baseStationName(station.name), getLineLabel(lineForLookup), directionOptions);
       }
 
-      // 실시간 도착정보는 출발역에만 붙입니다.
-      const nextStopHint = idx === 0 && result.path.length > 1 ? baseStationName(getStationName(result.path[1])) : undefined;
-      const realtimeArrival = idx === 0 ? await fetchRealtimeArrival(baseStationName(station.name), getLineLabel(result.segmentLines[0]), nextStopHint) : null;
+      // 출발역 + 환승역에서 실시간 도착정보를 가져옴
+      let realtimeArrival = null;
+      const isBoard = idx === 0;
+      const isTransferStop = result.transfers.some((t) => t.stationId === stationId);
+      if (isBoard || isTransferStop) {
+        const lineForArrival = isBoard
+          ? getLineLabel(result.segmentLines[0])
+          : getLineLabel(result.segmentLines[idx]);
+        const nextIdx = idx + 1;
+        const nextStopHint = nextIdx < result.path.length ? baseStationName(getStationName(result.path[nextIdx])) : undefined;
+        realtimeArrival = await fetchRealtimeArrival(baseStationName(station.name), lineForArrival, nextStopHint);
+      }
+
+      let arrivalMeta = null;
+      if (isBoard || isTransferStop) {
+        const lineForArrival = isBoard
+          ? getLineLabel(result.segmentLines[0])
+          : getLineLabel(result.segmentLines[idx]);
+        const nextIdx = idx + 1;
+        const nextStopHint = nextIdx < result.path.length ? baseStationName(getStationName(result.path[nextIdx])) : undefined;
+        arrivalMeta = { line: lineForArrival, direction: nextStopHint };
+      }
 
       return {
         id: stationId,
@@ -276,18 +314,17 @@ app.get("/api/route", async (req, res) => {
         lat: station.lat,
         lng: station.lng,
         realtimeArrival,
+        arrivalMeta,
         elevator: {
           installed: station.hasElevatorInstalled,
           operational: station.hasElevatorInstalled ? live?.operational !== false : false,
         },
         lift: {
-          // ⚠️ static station.hasLiftInstalled는 CSV에 컬럼이 없어 항상 false이므로,
-          // mtrWheelLift 실시간 캐시(liveLift.installed)를 설치여부의 유일한 기준으로 씁니다.
           installed: Boolean(liveLift?.installed),
           operational: liveLift?.installed ? liveLift?.operational !== false : false,
         },
         isTransfer: result.transfers.some((t) => t.stationId === stationId),
-        quickExit, // { facility, carNumber, doorNumber, direction, note } | null (출발/도착역만 값이 들어옴)
+        quickExit,
       };
     })
   );
