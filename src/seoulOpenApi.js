@@ -328,11 +328,14 @@ async function fetchLiftStatusAllOdcloud(stationNames) {
       rowsForStation = byStation.get(stationName + "역") || [];
     }
 
-    result.set(stationName, {
-      installed: rowsForStation.length > 0,
-      operational: rowsForStation.length > 0,
-      brokenFacilities: [],
-    });
+    if (rowsForStation.length > 0) {
+      result.set(stationName, {
+        installed: true,
+        operational: true,
+        brokenFacilities: [],
+      });
+    }
+    // API에 없는 역은 Map에 넣지 않음 → "알 수 없음" 처리 (blocked 판단에서 제외)
   }
   return result;
 }
@@ -391,21 +394,18 @@ async function fetchLiftStatusAllSeoulNative(stationNames) {
       );
     }
 
-    // 가동상태 필드가 실제로 존재하면(값이 있으면) "사용가능" 여부로 판단하고,
-    // 필드 자체가 비어있으면(설치현황 데이터에는 없을 수 있음) 설치된 것만으로 정상 처리합니다.
-    const broken = rowsForStation.filter((r) => {
-      const val = r[f.operational];
-      return val && !String(val).includes("사용가능");
-    });
-
-    // ⚠️ installed는 "이 역에 리프트 행이 실제로 있었는지"로만 판단합니다.
-    // (static 데이터의 hasLiftInstalled는 CSV에 해당 컬럼이 없어 항상 false라
-    //  더 이상 설치여부 판단에 쓰지 않고, 이 실시간 API 결과가 유일한 기준입니다.)
-    result.set(stationName, {
-      installed: rowsForStation.length > 0,
-      operational: rowsForStation.length > 0 ? broken.length < rowsForStation.length : false,
-      brokenFacilities: broken.map((r) => r[f.installPosition] || "휠체어리프트"),
-    });
+    if (rowsForStation.length > 0) {
+      const broken = rowsForStation.filter((r) => {
+        const val = r[f.operational];
+        return val && !String(val).includes("사용가능");
+      });
+      result.set(stationName, {
+        installed: true,
+        operational: broken.length < rowsForStation.length,
+        brokenFacilities: broken.map((r) => r[f.installPosition] || "휠체어리프트"),
+      });
+    }
+    // API에 없는 역은 Map에 넣지 않음 → "알 수 없음" (blocked 판단에서 제외)
   }
   return result;
 }
