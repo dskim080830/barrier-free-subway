@@ -48,15 +48,17 @@ function renderArrivalItems(arrivals, stationName, headerLine) {
   const items = arrivals.slice(0, Math.max(2, arrivals.length));
   return items
     .map((a) => {
+      const dest = a.destinationStation ? `${a.destinationStation}행` : "";
       const dirMatch = (a.lineName || "").match(/- (.+방면)/);
-      const dirLabel = dirMatch ? dirMatch[1] : (a.destinationStation ? `${a.destinationStation}행` : "");
+      const dirLabel = dirMatch ? dirMatch[1] : "";
+      const trainInfo = dirLabel ? `${dest} (${dirLabel})` : dest;
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
       const time = a.remainingSeconds != null
         ? (a.remainingSeconds <= 0 ? "곧 도착" : `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`)
         : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
       return `
         <li class="arrival-item">
-          <span class="arrival-item__line">🚇 ${dirLabel}</span>
+          <span class="arrival-item__line">🚇 ${trainInfo}</span>
           <span class="arrival-item__msg">${time} ${pos}</span>
         </li>`;
     })
