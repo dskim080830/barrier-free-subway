@@ -131,13 +131,17 @@ async function buildResponseFromOdsayPath(candidate) {
         realtimeArrival = await fetchRealtimeArrival(name, lineForArrival, nextStop);
       }
 
-      // 프론트 폴링용: 출발역/환승역에 어떤 노선·방향으로 조회했는지 기록
       let arrivalMeta = null;
       if (isBoard || isTransfer) {
         const lineForArrival = isBoard ? candidate.segmentLineNames[0] : checkpoint.toLine;
         const nextIdx = idx + 1;
         const nextStop = nextIdx < candidate.stops.length ? baseStationName(candidate.stops[nextIdx].name) : undefined;
-        arrivalMeta = { line: lineForArrival, direction: nextStop };
+        const dirStops = [];
+        for (let j = nextIdx; j < candidate.stops.length && dirStops.length < 3; j++) {
+          const sn = baseStationName(candidate.stops[j].name);
+          if (sn !== name) dirStops.push(sn);
+        }
+        arrivalMeta = { line: lineForArrival, direction: nextStop, directionStops: dirStops };
       }
 
       const lineForColor = idx === 0
@@ -310,7 +314,12 @@ app.get("/api/route", async (req, res) => {
           : getLineLabel(result.segmentLines[idx]);
         const nextIdx = idx + 1;
         const nextStopHint = nextIdx < result.path.length ? baseStationName(getStationName(result.path[nextIdx])) : undefined;
-        arrivalMeta = { line: lineForArrival, direction: nextStopHint };
+        const dirStops = [];
+        for (let j = nextIdx; j < result.path.length && dirStops.length < 3; j++) {
+          const sn = baseStationName(getStationName(result.path[j]));
+          if (sn !== baseStationName(station.name)) dirStops.push(sn);
+        }
+        arrivalMeta = { line: lineForArrival, direction: nextStopHint, directionStops: dirStops };
       }
 
       const lineForLabel = isBoard

@@ -17,9 +17,28 @@ async function init() {
   state.lineMeta = data.lineMeta;
   state.nameToId = new Map(state.stations.map((s) => [s.name, s.id]));
 
+  const linesByName = new Map();
+  for (const s of state.stations) {
+    if (!linesByName.has(s.name)) linesByName.set(s.name, new Set());
+    for (const l of s.lines) {
+      const meta = state.lineMeta[l];
+      if (meta) linesByName.get(s.name).add(meta.name);
+    }
+  }
+
   const datalist = $("#station-list");
+  const seen = new Set();
   datalist.innerHTML = state.stations
-    .map((s) => `<option value="${s.name}"></option>`)
+    .filter((s) => {
+      if (seen.has(s.name)) return false;
+      seen.add(s.name);
+      return true;
+    })
+    .map((s) => {
+      const lines = linesByName.get(s.name);
+      const lineLabel = lines && lines.size > 0 ? ` (${[...lines].join(", ")})` : "";
+      return `<option value="${s.name}" label="${s.name}${lineLabel}"></option>`;
+    })
     .join("");
 
   $("#find-route-btn").addEventListener("click", handleFindRoute);
@@ -41,24 +60,24 @@ function stopPolling() {
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 }
 
-function renderArrivalItems(arrivals, stationName, headerLine) {
+function renderArrivalItems(arrivals, stationName) {
   if (!arrivals || arrivals.length === 0) {
     return `<li class="arrival-item arrival-item--empty">"${stationName}"의 실시간 도착정보가 없습니다.</li>`;
   }
-  const items = arrivals.slice(0, Math.max(2, arrivals.length));
-  return items
+  return arrivals.slice(0, 4)
     .map((a) => {
       const dest = a.destinationStation ? `${a.destinationStation}행` : "";
       const dirMatch = (a.lineName || "").match(/- (.+방면)/);
       const dirLabel = dirMatch ? dirMatch[1] : "";
       const trainInfo = dirLabel ? `${dest} (${dirLabel})` : dest;
+      const express = a.trainStatus === "급행" ? `<span class="express-badge">급행</span> ` : "";
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
       const time = a.remainingSeconds != null
         ? (a.remainingSeconds <= 0 ? "곧 도착" : `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`)
         : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
       return `
         <li class="arrival-item">
-          <span class="arrival-item__line">🚇 ${trainInfo}</span>
+          <span class="arrival-item__line">🚇 ${express}${trainInfo}</span>
           <span class="arrival-item__msg">${time} ${pos}</span>
         </li>`;
     })
@@ -142,7 +161,7 @@ function updateArrivalUI() {
       if (a.remainingSeconds == null) return a;
       return { ...a, remainingSeconds: Math.max(0, a.remainingSeconds - elapsed) };
     });
-    container.innerHTML = renderArrivalItems(adjusted, stop.name, stop.arrivalMeta?.line);
+    container.innerHTML = renderArrivalItems(adjusted, stop.name);
   });
 }
 
@@ -189,13 +208,21 @@ function renderResult(data) {
       const badge = accessibilityBadge(stop);
       const roleLabel = isFirst ? "출발" : isLast ? "도착" : stop.isTransfer ? "환승" : "경유";
 
-      let arrivalHeader = "";
+      let arrivalSection = "";
       if (stop.arrivalMeta) {
-        const lineName = stop.arrivalMeta.line || "";
-        arrivalHeader = `<div class="arrival-header">${lineName} ${stop.name} 승차 시</div>`;
+        const arrLine = stop.arrivalMeta.line || "";
+        const arrColor = lineColorByLabel(arrLine);
+        const dirStops = stop.arrivalMeta.directionStops || [];
+        const dirLabel = dirStops.length > 0 ? ` (${dirStops.join(" · ")} 방면)` : "";
+        const hasArrival = stop.realtimeArrival && stop.realtimeArrival.length > 0;
+        arrivalSection = `
+          <div class="arrival-header" style="color:${arrColor};border-left:3px solid ${arrColor};padding-left:8px;">
+            ${arrLine} ${stop.name} 승차 시${dirLabel}
+          </div>
+          <ul class="arrival-list arrival-list--inline">
+            ${hasArrival ? renderArrivalItems(stop.realtimeArrival, stop.name) : '<li class="arrival-item arrival-item--empty">도착정보 조회 중...</li>'}
+          </ul>`;
       }
-
-      const hasArrival = stop.realtimeArrival && stop.realtimeArrival.length > 0;
 
       return `
         <li class="stop ${stop.isTransfer ? "stop--transfer" : ""}" style="--line-color:${color}" data-stop-idx="${idx}">
@@ -210,7 +237,7 @@ function renderResult(data) {
               </span>
             </div>
             ${stop.quickExit ? `<div class="quick-exit">🚪 ${stop.quickExit.note || `${stop.quickExit.carNumber}번째 칸 ${stop.quickExit.doorNumber}번 문 쪽이 가장 가깝습니다.`}</div>` : ""}
-            ${stop.arrivalMeta ? `${arrivalHeader}<ul class="arrival-list arrival-list--inline">${hasArrival ? renderArrivalItems(stop.realtimeArrival, stop.name) : '<li class="arrival-item arrival-item--empty">도착정보 조회 중...</li>'}</ul>` : ""}
+            ${arrivalSection}
           </div>
         </li>
       `;

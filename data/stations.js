@@ -38,7 +38,7 @@ const LINE_META = {
   "I11D1": { name: "신분당선", color: "#D4003B" },
   "I26K6": { name: "동해선", color: "#8E44AD" },
   "I27K7": { name: "대경선", color: "#16A085" },
-  "I28A1": { name: "인천국제공항선", color: "#2C3E50" },
+  "I28A1": { name: "공항철도", color: "#0090D2" },
   "I28K1": { name: "수인선", color: "#FABE00" },
   "I4101": { name: "1호선", color: "#0052A4" },
   "I4102": { name: "1호선", color: "#0052A4" },
