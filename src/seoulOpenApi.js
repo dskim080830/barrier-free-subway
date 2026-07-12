@@ -56,7 +56,7 @@ function parseCarDoor(doorStr) {
   return { carNumber: car ?? null, doorNumber: door ?? null };
 }
 
-const USE_MOCK = String(process.env.USE_MOCK_ELEVATOR_API || "true") === "true";
+const USE_MOCK = String(process.env.USE_MOCK_ELEVATOR_API || "false") === "true";
 const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY || "";
 
 // ── 서울열린데이터광장 (data.seoul.go.kr) 공통 설정 ──────────────────────
@@ -73,6 +73,10 @@ const QUICK_EXIT_SEOUL_SERVICE = "getFstExit";
 // 휠체어리프트 설치현황 (mtrWheelLift) 전용 키/서비스명
 const LIFT_SEOUL_API_KEY = process.env.SEOUL_LIFT_API_KEY || "665863466364736b3833496a517166";
 const LIFT_SEOUL_SERVICE = "mtrWheelLift";
+
+// 공공데이터포털 odcloud 휠체어리프트 API (서비스 ID: 15130663)
+const ODCLOUD_LIFT_API_KEY = process.env.ODCLOUD_LIFT_API_KEY || "";
+const ODCLOUD_LIFT_BASE_URL = "https://api.odcloud.kr/api/15130663/v1/uddi:74977fa3-2dd7-4ac3-8660-ef35b0815318";
 
 // 지하철 실시간 도착정보 (realtimeStationArrival) 전용 키/호스트
 // ⚠️ 이 API는 8088 포트가 아니라 별도 호스트(swopenAPI.seoul.go.kr)를 씁니다.
@@ -276,8 +280,65 @@ async function fetchElevatorStatusAllSeoul(stationNames) {
   return fetchFacilityStatusAllSeoul(stationNames, "엘리베이터");
 }
 
+// ── 공공데이터포털 odcloud 휠체어리프트 조회 ─────────────────────────
+let odcloudLiftRowsCache = null;
+
+async function fetchAllOdcloudLiftRows() {
+  if (odcloudLiftRowsCache) return odcloudLiftRowsCache;
+  const allRows = [];
+  let page = 1;
+  const perPage = 500;
+  while (true) {
+    const url = `${ODCLOUD_LIFT_BASE_URL}?page=${page}&perPage=${perPage}&serviceKey=${encodeURIComponent(ODCLOUD_LIFT_API_KEY)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`odcloud HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data || !Array.isArray(data.data)) break;
+    allRows.push(...data.data);
+    if (allRows.length >= (data.totalCount || 0) || data.data.length < perPage) break;
+    page++;
+  }
+  console.log(`[seoulOpenApi][odcloud-lift] 총 ${allRows.length}행 로드 완료`);
+  if (allRows.length > 0) {
+    console.log(`[seoulOpenApi][DEBUG][odcloud-lift] 첫 row:`, allRows[0]);
+  }
+  odcloudLiftRowsCache = allRows;
+  return allRows;
+}
+
+async function fetchLiftStatusAllOdcloud(stationNames) {
+  const rows = await fetchAllOdcloudLiftRows();
+
+  const byStation = new Map();
+  for (const row of rows) {
+    const rawName = row["역명"];
+    if (!rawName) continue;
+    const name = stripLiftStationSuffix(rawName);
+    if (!byStation.has(name)) byStation.set(name, []);
+    byStation.get(name).push(row);
+  }
+
+  const result = new Map();
+  for (const stationName of stationNames) {
+    let rowsForStation = byStation.get(stationName) || [];
+    if (rowsForStation.length === 0) {
+      rowsForStation = byStation.get(stationName.replace(/역$/, "")) || [];
+    }
+    if (rowsForStation.length === 0) {
+      rowsForStation = byStation.get(stationName + "역") || [];
+    }
+
+    result.set(stationName, {
+      installed: rowsForStation.length > 0,
+      operational: rowsForStation.length > 0,
+      brokenFacilities: [],
+    });
+  }
+  return result;
+}
+
 // ── 휠체어리프트 설치현황 (mtrWheelLift) 전용 조회 ────────────────────
-let liftRowsCache = null; // 요청마다 전체를 새로 긁지 않도록 프로세스 내 캐시 (elevatorStatusCache가 주기적으로 refresh를 부르므로 여기선 단순 캐시로 충분)
+let liftRowsCache = null;
 
 async function fetchAllLiftRows() {
   if (liftRowsCache) return liftRowsCache;
@@ -678,10 +739,18 @@ async function fetchElevatorStatusAll(stationNames) {
 
 /**
  * 전체 역의 휠체어리프트 실시간 가동 상태를 가져옵니다.
- * 우선순위: mtrWheelLift(서울열린데이터광장, 요청주신 전용 API) → data.go.kr 폴백
+ * 우선순위: odcloud(공공데이터포털) → mtrWheelLift(서울열린데이터광장) → data.go.kr 폴백
  */
 async function fetchLiftStatusAll(stationNames) {
   if (USE_MOCK) return mockFetchLiftStatusAll(stationNames);
+
+  if (ODCLOUD_LIFT_API_KEY) {
+    try {
+      return await fetchLiftStatusAllOdcloud(stationNames);
+    } catch (err) {
+      console.error(`[seoulOpenApi][odcloud-lift] 리프트 조회 실패, mtrWheelLift로 폴백합니다:`, err.message);
+    }
+  }
 
   try {
     return await fetchLiftStatusAllSeoulNative(stationNames);
@@ -837,6 +906,7 @@ function setMockBrokenStation(stationName, broken) {
 /** 서울열린데이터광장 전체 스캔 캐시(리프트/빠른하차)를 비웁니다. 상태 새로고침 시 호출하세요. */
 function clearSeoulRawCaches() {
   liftRowsCache = null;
+  odcloudLiftRowsCache = null;
   quickExitRowsCache = null;
 }
 
