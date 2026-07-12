@@ -18,9 +18,18 @@ async function init() {
   state.nameToId = new Map(state.stations.map((s) => [s.name, s.id]));
 
   function stripSuffix(name) {
-    let s = name.replace(/\([^)]*\)\s*$/, "").trim();
+    let s = name;
+    if (s.length > 1 && s.endsWith("역")) s = s.slice(0, -1);
+    s = s.replace(/\([^)]*\)\s*$/, "").trim();
     if (s.length > 1 && s.endsWith("역")) s = s.slice(0, -1);
     return s;
+  }
+
+  for (const s of state.stations) {
+    const base = stripSuffix(s.name);
+    if (base !== s.name && !state.nameToId.has(base)) {
+      state.nameToId.set(base, s.id);
+    }
   }
 
   const linesByBase = new Map();
@@ -69,6 +78,44 @@ function stopPolling() {
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 }
 
+const EXPRESS_STOP_PATTERNS = {
+  "1호선": {
+    "급행": {
+      "천안": "용산·영등포·안양·수원·오산·평택·천안",
+      "신창": "용산·영등포·안양·수원·오산·평택·천안·신창",
+      "서동탄": "용산·영등포·안양·수원·서동탄",
+      "병점": "용산·영등포·안양·수원·병점",
+      "수원": "용산·영등포·안양·수원",
+      "인천": "용산·영등포·부천·부평·인천",
+      "동인천": "용산·영등포·부천·부평·동인천",
+      "소요산": "용산·청량리·의정부·소요산",
+    },
+    "특급": {
+      "천안": "용산·수원·평택·천안",
+      "신창": "용산·수원·평택·천안·신창",
+    },
+  },
+};
+
+function extractStopInfo(lineName) {
+  if (!lineName) return "";
+  const destMatch = lineName.match(/^(.+?)행/);
+  if (!destMatch) return "";
+  const dest = destMatch[1];
+
+  const typeMatch = lineName.match(/(급행|특급)/);
+  const trainType = typeMatch ? typeMatch[1] : "";
+  if (!trainType) return "";
+
+  for (const [line, types] of Object.entries(EXPRESS_STOP_PATTERNS)) {
+    const stops = types[trainType];
+    if (stops && stops[dest]) {
+      return `정차: ${stops[dest]}`;
+    }
+  }
+  return "";
+}
+
 function renderArrivalItems(arrivals, stationName) {
   if (!arrivals || arrivals.length === 0) {
     return `<li class="arrival-item arrival-item--empty">"${stationName}"의 실시간 도착정보가 없습니다.</li>`;
@@ -79,14 +126,21 @@ function renderArrivalItems(arrivals, stationName) {
       const dirMatch = (a.lineName || "").match(/- (.+방면)/);
       const dirLabel = dirMatch ? dirMatch[1] : "";
       const trainInfo = dirLabel ? `${dest} (${dirLabel})` : dest;
-      const express = a.trainStatus === "급행" ? `<span class="express-badge">급행</span> ` : "";
+      let badge = "";
+      if (a.trainStatus === "급행") badge = `<span class="express-badge">급행</span> `;
+      else if (a.trainStatus === "특급") badge = `<span class="express-badge express-badge--special">특급</span> `;
+
+      const stopInfo = (a.trainStatus === "급행" || a.trainStatus === "특급") && a.lineName
+        ? extractStopInfo(a.lineName) : "";
+
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
       const time = a.remainingSeconds != null
         ? (a.remainingSeconds <= 0 ? "곧 도착" : `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`)
         : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
       return `
         <li class="arrival-item">
-          <span class="arrival-item__line">🚇 ${express}${trainInfo}</span>
+          <span class="arrival-item__line">🚇 ${badge}${trainInfo}</span>
+          ${stopInfo ? `<span class="arrival-item__stops">${stopInfo}</span>` : ""}
           <span class="arrival-item__msg">${time} ${pos}</span>
         </li>`;
     })
@@ -284,6 +338,15 @@ function accessibilityBadge(stop) {
 
   if (elevatorOk) return { ok: true, text: "♿ 엘리베이터 이용 가능" };
   if (liftOk) return { ok: true, text: "🦽 휠체어리프트 이용 가능" };
+
+  const elevatorInstalled = stop.elevator && stop.elevator.installed;
+  const liftInstalled = stop.lift && stop.lift.installed;
+  if (elevatorInstalled === null && !liftInstalled) {
+    return { ok: false, text: "ℹ 데이터 없음" };
+  }
+  if (elevatorInstalled && stop.elevator.operational === false) {
+    return { ok: false, text: "⚠ 엘리베이터 고장" };
+  }
   return { ok: false, text: "⚠ 엘리베이터·리프트 이용 불가" };
 }
 
