@@ -189,7 +189,9 @@ async function fetchArrivalForStop(stop) {
   try {
     const res = await fetch(`/api/realtime-arrival?${params}`);
     const data = await res.json();
-    return data.arrivals || [];
+    // API 실패(호출 한도 초과 등)면 null을 돌려줘서 마지막 성공 데이터를 유지
+    if (!data.ok || data.arrivals == null) return null;
+    return data.arrivals;
   } catch { return null; }
 }
 
@@ -207,7 +209,8 @@ async function refreshAllArrivals() {
 
 function startArrivalPolling() {
   refreshAllArrivals();
-  arrivalPollingTimer = setInterval(refreshAllArrivals, 15000);
+  // 서울열린데이터광장 일일 호출 한도(1000건) 절약을 위해 30초 간격으로 폴링
+  arrivalPollingTimer = setInterval(refreshAllArrivals, 30000);
   countdownTimer = setInterval(updateArrivalUI, 1000);
 }
 

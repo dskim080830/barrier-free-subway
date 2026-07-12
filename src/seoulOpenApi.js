@@ -494,7 +494,43 @@ const LINE_LABEL_TO_SUBWAY_ID = {
   "경춘선": "1067", "수인분당선": "1075", "신분당선": "1077",
   "경강선": "1081", "우이신설선": "1092", "서해선": "1093",
   "신림선": "1095", "GTX-A": "1032",
+  // 표기가 다른 이름들 (ODsay·내부 데이터가 주는 변형 이름)
+  "경의선": "1063", "중앙선": "1063",
+  "인천국제공항철도": "1065", "인천국제공항선": "1065",
+  "분당선": "1075", "수인선": "1075",
+  "GTXA": "1032",
 };
+
+/**
+ * 노선명을 subwayId 조회용으로 정규화합니다.
+ * "수도권 경의·중앙선" → "경의중앙선", "공항 철도" → "공항철도"
+ */
+function normalizeLineLabel(label) {
+  return String(label || "")
+    .replace(/^수도권\s*/, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[·.\s]/g, "")
+    .trim();
+}
+
+function lineLabelToSubwayId(lineLabel) {
+  if (!lineLabel) return null;
+  if (LINE_LABEL_TO_SUBWAY_ID[lineLabel]) return LINE_LABEL_TO_SUBWAY_ID[lineLabel];
+  const norm = normalizeLineLabel(lineLabel);
+  for (const [key, id] of Object.entries(LINE_LABEL_TO_SUBWAY_ID)) {
+    if (normalizeLineLabel(key) === norm) return id;
+  }
+  return null;
+}
+
+/** "신창(순천향대)역" → "신창" 처럼 괄호·"역" 접미사를 뗀 비교용 역명 */
+function normalizeStationNameForCompare(name) {
+  let s = String(name || "").trim();
+  if (s.length > 1 && s.endsWith("역")) s = s.slice(0, -1);
+  s = s.replace(/\([^)]*\)\s*$/, "").trim();
+  if (s.length > 1 && s.endsWith("역")) s = s.slice(0, -1);
+  return s;
+}
 
 const REALTIME_ARRIVAL_FIELD_MAP = {
   lineName: "trainLineNm", // 예: "당고개행 - 신도림방면 일반열차"
@@ -542,19 +578,23 @@ async function fetchRealtimeArrival(stationName, lineLabel, directionHint) {
       console.warn(`[seoulOpenApi][realtimeStationArrival] "${stationName}" 도착정보 행이 0개입니다.`);
     }
 
-    let filtered = rows;
+    // ⚠️ 역명 필터: API가 이름이 비슷한 다른 역(예: "용산" 조회 시 "신용산")의
+    // 행을 함께 돌려주는 경우가 있어, 요청한 역의 행만 남깁니다.
+    // 이 필터가 없으면 용산(경의중앙선)에 신용산(4호선)의 "삼각지방면" 열차가 섞입니다.
+    const wantedName = normalizeStationNameForCompare(stationName);
+    let filtered = rows.filter(
+      (r) => !r.statnNm || normalizeStationNameForCompare(r.statnNm) === wantedName
+    );
 
     // 노선 필터
     if (lineLabel) {
-      let targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[lineLabel];
-      if (!targetSubwayId) {
-        const coreName = lineLabel.replace(/^수도권\s*/, "");
-        targetSubwayId = LINE_LABEL_TO_SUBWAY_ID[coreName];
-      }
+      const targetSubwayId = lineLabelToSubwayId(lineLabel);
       if (targetSubwayId) {
-        filtered = rows.filter((r) => String(r.subwayId) === targetSubwayId);
+        filtered = filtered.filter((r) => String(r.subwayId) === targetSubwayId);
       } else {
-        filtered = rows.filter((r) => String(r.trainLineNm || "").includes(lineLabel));
+        // subwayId를 못 찾은 노선명 — 잘못된 노선이 섞여 나가느니 비우고 로그를 남깁니다.
+        console.warn(`[seoulOpenApi][realtimeStationArrival] 노선명 "${lineLabel}"의 subwayId를 찾지 못했습니다.`);
+        filtered = filtered.filter((r) => String(r.trainLineNm || "").includes(lineLabel));
       }
     }
 
@@ -580,8 +620,10 @@ async function fetchRealtimeArrival(stationName, lineLabel, directionHint) {
       updatedAt: r[f.updatedAt] ?? null,
     }));
   } catch (err) {
+    // ⚠️ null = "API 호출 실패(한도 초과 등)". 빈 배열([] = 열차 없음)과 구분해서
+    // 돌려줘야 프론트엔드가 마지막으로 성공한 데이터를 지우지 않고 유지할 수 있습니다.
     console.error(`[seoulOpenApi] "${stationName}" 실시간 도착정보 조회 실패:`, err.message);
-    return [];
+    return null;
   }
 }
 

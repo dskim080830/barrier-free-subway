@@ -51,6 +51,14 @@ app.get("/api/elevator-status", (req, res) => {
 });
 
 // 특정 역의 실시간 지하철 도착정보 (서울시 지하철 실시간 도착정보 일괄제공 API)
+//
+// ⚠️ 서울열린데이터광장 API는 일일 호출 한도(무료 키 기준 1000건)가 있어서
+//   1) 같은 조회는 25초 동안 캐시에서 응답 (여러 사용자·반복 폴링 시 호출 수 절약)
+//   2) API가 실패하면(한도 초과 등) 10분 이내의 마지막 성공 데이터를 대신 반환
+const arrivalCache = new Map(); // key -> { arrivals, at }
+const ARRIVAL_CACHE_TTL_MS = 25 * 1000;
+const ARRIVAL_STALE_MAX_MS = 10 * 60 * 1000;
+
 app.get("/api/realtime-arrival", async (req, res) => {
   const { station, line } = req.query;
   if (!station) {
@@ -58,7 +66,25 @@ app.get("/api/realtime-arrival", async (req, res) => {
   }
   try {
     const { direction } = req.query;
+    const cacheKey = `${baseStationName(station)}|${line || ""}|${direction || ""}`;
+    const cached = arrivalCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && now - cached.at < ARRIVAL_CACHE_TTL_MS) {
+      return res.json({ ok: true, station, mock: USE_MOCK, arrivals: cached.arrivals, cached: true });
+    }
+
     const arrivals = await fetchRealtimeArrival(baseStationName(station), line || undefined, direction || undefined);
+
+    if (arrivals === null) {
+      // API 실패(호출 한도 초과 등): 너무 오래되지 않은 캐시가 있으면 그걸 반환
+      if (cached && now - cached.at < ARRIVAL_STALE_MAX_MS) {
+        return res.json({ ok: true, station, mock: USE_MOCK, arrivals: cached.arrivals, stale: true });
+      }
+      return res.json({ ok: false, station, arrivals: null, reason: "실시간 도착정보 API 호출 실패(일일 한도 초과 등)" });
+    }
+
+    arrivalCache.set(cacheKey, { arrivals, at: now });
     res.json({ ok: true, station, mock: USE_MOCK, arrivals });
   } catch (err) {
     res.status(500).json({ ok: false, reason: err.message });
