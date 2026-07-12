@@ -48,14 +48,15 @@ function renderArrivalItems(arrivals, stationName, headerLine) {
   const items = arrivals.slice(0, Math.max(2, arrivals.length));
   return items
     .map((a) => {
-      const dest = a.destinationStation ? `→ ${a.destinationStation}행` : "";
+      const dirMatch = (a.lineName || "").match(/- (.+방면)/);
+      const dirLabel = dirMatch ? dirMatch[1] : (a.destinationStation ? `${a.destinationStation}행` : "");
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
       const time = a.remainingSeconds != null
         ? (a.remainingSeconds <= 0 ? "곧 도착" : `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`)
         : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
       return `
         <li class="arrival-item">
-          <span class="arrival-item__line">🚇 ${dest}</span>
+          <span class="arrival-item__line">🚇 ${dirLabel}</span>
           <span class="arrival-item__msg">${time} ${pos}</span>
         </li>`;
     })
@@ -180,8 +181,8 @@ function renderResult(data) {
     .map((stop, idx) => {
       const isFirst = idx === 0;
       const isLast = idx === data.stops.length - 1;
-      const lineForColor = idx === 0 ? data.segmentLines[0] : data.segmentLines[Math.min(idx - 1, data.segmentLines.length - 1)];
-      const color = lineColorByLabel(lineForColor);
+      const stopLine = stop.lineName || (idx === 0 ? data.segmentLines[0] : data.segmentLines[Math.min(idx - 1, data.segmentLines.length - 1)]);
+      const color = lineColorByLabel(stopLine);
 
       const badge = accessibilityBadge(stop);
       const roleLabel = isFirst ? "출발" : isLast ? "도착" : stop.isTransfer ? "환승" : "경유";
@@ -189,7 +190,6 @@ function renderResult(data) {
       let arrivalHeader = "";
       if (stop.arrivalMeta) {
         const lineName = stop.arrivalMeta.line || "";
-        const dir = stop.arrivalMeta.direction || "";
         arrivalHeader = `<div class="arrival-header">${lineName} ${stop.name} 승차 시</div>`;
       }
 
@@ -201,6 +201,7 @@ function renderResult(data) {
           <div class="stop__body">
             <div class="stop__top">
               <span class="stop__name">${stop.name}</span>
+              <span class="line-badge" style="background:${color}">${stopLine}</span>
               <span class="line-badge">${roleLabel}</span>
               <span class="elevator-badge ${badge.ok ? "elevator-badge--ok" : "elevator-badge--bad"}">
                 ${badge.text}

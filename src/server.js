@@ -140,9 +140,14 @@ async function buildResponseFromOdsayPath(candidate) {
         arrivalMeta = { line: lineForArrival, direction: nextStop };
       }
 
+      const lineForColor = idx === 0
+        ? candidate.segmentLineNames[0]
+        : candidate.segmentLineNames[Math.min(idx - 1, candidate.segmentLineNames.length - 1)];
+
       return {
         id: null,
         name: s.name,
+        lineName: lineForColor,
         lat: s.lat,
         lng: s.lng,
         realtimeArrival,
@@ -308,9 +313,16 @@ app.get("/api/route", async (req, res) => {
         arrivalMeta = { line: lineForArrival, direction: nextStopHint };
       }
 
+      const lineForLabel = isBoard
+        ? getLineLabel(result.segmentLines[0])
+        : idx === result.path.length - 1
+        ? getLineLabel(result.segmentLines[result.segmentLines.length - 1])
+        : getLineLabel(result.segmentLines[idx - 1] || result.segmentLines[0]);
+
       return {
         id: stationId,
         name: station.name,
+        lineName: lineForLabel,
         lat: station.lat,
         lng: station.lng,
         realtimeArrival,
@@ -329,12 +341,21 @@ app.get("/api/route", async (req, res) => {
     })
   );
 
-  // ⚠️ 카카오맵은 "역-역 지하철 소요시간"을 알려주는 공개 REST API를 별도로
-  // 제공하지 않아서 (모바일/웹 지도 안의 길찾기 UI로만 제공), 실제 API 호출
-  // 대신 업계에서 흔히 쓰는 평균값으로 추정합니다:
-  // - 정차역 1구간 평균 약 2분 (역간 이동 + 정차 시간 포함)
-  // - 환승 1회당 평균 약 4분 (도보 이동 + 대기)
-  // 실제 배차간격/혼잡도에 따라 오차가 있을 수 있는 "추정치"입니다.
+  const mergedStops = [];
+  for (const stop of stops) {
+    const prev = mergedStops[mergedStops.length - 1];
+    if (prev && baseStationName(prev.name) === baseStationName(stop.name)) {
+      if (stop.isTransfer) prev.isTransfer = true;
+      if (stop.realtimeArrival && stop.realtimeArrival.length > 0) prev.realtimeArrival = stop.realtimeArrival;
+      if (stop.arrivalMeta) prev.arrivalMeta = stop.arrivalMeta;
+      if (stop.quickExit) prev.quickExit = stop.quickExit;
+      if (stop.elevator?.installed) prev.elevator = stop.elevator;
+      if (stop.lift?.installed) prev.lift = stop.lift;
+    } else {
+      mergedStops.push({ ...stop });
+    }
+  }
+
   const MINUTES_PER_SEGMENT = 2;
   const MINUTES_PER_TRANSFER = 4;
   const estimatedMinutes =
@@ -351,7 +372,7 @@ app.get("/api/route", async (req, res) => {
       toLine: getLineLabel(t.toLine),
     })),
     segmentLines: result.segmentLines.map(getLineLabel),
-    stops,
+    stops: mergedStops,
     source: "internal-graph-fallback",
     note:
       blockedAcrossAttempts.length > 0
