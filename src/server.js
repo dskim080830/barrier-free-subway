@@ -138,7 +138,7 @@ app.get("/api/realtime-arrival", async (req, res) => {
     //   (예: 용산 → 구로면 하행 전체 → 인천행/구로행/서동탄행/천안행/신창행/수원행 모두 표시)
     //   바로 다음 역명으로 방향을 못 찾으면(연결 편차 등) 기존 방식으로 폴백합니다.
     if (directionHints.length > 0 && arrivals.length > 0) {
-      const nextStopHint = direction; // 경로상 바로 다음 역명 (가장 신뢰도 높은 힌트)
+      const nextStopHint = direction;
       const updnLineSet = new Set();
       if (nextStopHint) {
         for (const a of arrivals) {
@@ -149,10 +149,8 @@ app.get("/api/realtime-arrival", async (req, res) => {
 
       let dirFiltered;
       if (updnLineSet.size > 0) {
-        // 목적지(종착역) 상관없이 같은 상/하행 방향이면 전부 포함
         dirFiltered = arrivals.filter((a) => a.updnLine && updnLineSet.has(a.updnLine));
       } else {
-        // 상/하행을 못 찾았으면(직행 다음역 매칭 실패) 기존 방식으로 폴백
         dirFiltered = arrivals.filter((a) => {
           const desc = a.lineName || "";
           return directionHints.some((hint) => desc.includes(hint));
