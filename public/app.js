@@ -134,8 +134,8 @@ function renderArrivalItems(arrivals, stationName) {
         ? extractStopInfo(a.lineName) : "";
 
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
-      const time = a.remainingSeconds != null
-        ? (a.remainingSeconds <= 0 ? "곧 도착" : `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`)
+      const time = a.remainingSeconds != null && a.remainingSeconds > 0
+        ? `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`
         : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
       return `
         <li class="arrival-item">
@@ -225,7 +225,14 @@ function updateArrivalUI() {
     const elapsed = stop._lastFetchTime ? (Date.now() - stop._lastFetchTime) / 1000 : 0;
     const adjusted = stop.realtimeArrival.map((a) => {
       if (a.remainingSeconds == null) return a;
-      return { ...a, remainingSeconds: Math.max(0, a.remainingSeconds - elapsed) };
+      if (elapsed > 60) {
+        return { ...a, remainingSeconds: null };
+      }
+      const adj = a.remainingSeconds - elapsed;
+      if (adj <= 0) {
+        return { ...a, remainingSeconds: null };
+      }
+      return { ...a, remainingSeconds: adj };
     });
     container.innerHTML = renderArrivalItems(adjusted, stop.name);
   });
