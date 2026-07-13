@@ -168,11 +168,10 @@ app.get("/api/realtime-arrival", async (req, res) => {
       const pathStops = new Set(dsRaw.split(","));
       const allowedTermini = getBranchAllowedTermini(pathStops);
       if (allowedTermini.length > 0) {
-        const branchFiltered = arrivals.filter((a) => {
+        arrivals = arrivals.filter((a) => {
           const dest = a.destinationStation || "";
           return allowedTermini.some((t) => dest.includes(t) || t.includes(dest));
         });
-        if (branchFiltered.length > 0) arrivals = branchFiltered;
       }
     }
 
