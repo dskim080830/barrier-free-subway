@@ -78,45 +78,11 @@ function stopPolling() {
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 }
 
-const EXPRESS_STOP_PATTERNS = {
-  "1호선": {
-    "급행": {
-      "천안": "서울·용산·영등포·안양·수원·세류·오산·서정리·평택·성환·천안",
-      "신창": "서울·용산·영등포·안양·수원·세류·오산·서정리·평택·성환·천안·신창",
-      "서동탄": "서울·용산·영등포·안양·수원·세류·서동탄",
-      "병점": "서울·용산·영등포·안양·수원·세류·병점",
-      "수원": "서울·용산·영등포·안양·수원",
-      "인천": "서울·용산·영등포·부천·부평·주안·인천",
-      "동인천": "서울·용산·영등포·부천·부평·주안·인천·동인천",
-      "소요산": "서울·용산·청량리·의정부·양주·동두천중앙·소요산",
-      "광운대": "서울·용산·청량리·광운대",
-      "청량리": "서울·용산·청량리",
-    },
-    "특급": {
-      "천안": "서울·용산·수원·평택·천안",
-      "신창": "서울·용산·수원·평택·천안·신창",
-    },
-  },
-  "9호선": {
-    "급행": {
-      "중앙보훈병원": "김포공항·당산·여의도·노량진·동작·고속터미널·신논현·선정릉·봉은사·종합운동장·삼성중앙·석촌·올림픽공원·중앙보훈병원",
-      "개화": "중앙보훈병원·올림픽공원·석촌·삼성중앙·종합운동장·봉은사·선정릉·신논현·고속터미널·동작·노량진·여의도·당산·김포공항·개화",
-    },
-  },
-};
+const EXPRESS_STOP_PATTERNS = {};
 
 function extractStopInfo(lineName, trainType) {
   if (!lineName || !trainType) return "";
-  const destMatch = lineName.match(/^(.+?)행/);
-  if (!destMatch) return "";
-  const dest = destMatch[1];
-
-  for (const [line, types] of Object.entries(EXPRESS_STOP_PATTERNS)) {
-    const stops = types[trainType];
-    if (stops && stops[dest]) {
-      return `정차: ${stops[dest]}`;
-    }
-  }
+  if (trainType === "급행") return "급행 열차 정차역은 역사 내 열차 노선도를 확인하세요";
   return "";
 }
 
@@ -132,9 +98,8 @@ function renderArrivalItems(arrivals, stationName) {
       const trainInfo = dirLabel ? `${dest} (${dirLabel})` : dest;
       let badge = "";
       if (a.trainStatus === "급행") badge = `<span class="express-badge">급행</span> `;
-      else if (a.trainStatus === "특급") badge = `<span class="express-badge express-badge--special">특급</span> `;
 
-      const stopInfo = (a.trainStatus === "급행" || a.trainStatus === "특급") && a.lineName
+      const stopInfo = a.trainStatus === "급행" && a.lineName
         ? extractStopInfo(a.lineName, a.trainStatus) : "";
 
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";

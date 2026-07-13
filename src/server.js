@@ -84,11 +84,11 @@ const BRANCH_GROUPS = [
   },
 ];
 
-/** 경로(pathStops)가 어느 분기 그룹에 속하는지 찾아, 반대 그룹의 종착역명 목록을 반환합니다. */
-function getBranchExclusionTermini(pathStops) {
+/** 경로(pathStops)가 어느 분기 그룹에 속하는지 찾아, 해당 그룹의 허용 종착역명 목록을 반환합니다. */
+function getBranchAllowedTermini(pathStops) {
   for (const group of BRANCH_GROUPS) {
     if (group.markerStops.some((m) => pathStops.has(m))) {
-      return BRANCH_GROUPS.filter((g) => g !== group).flatMap((g) => g.termini);
+      return group.termini;
     }
   }
   return [];
@@ -161,19 +161,16 @@ app.get("/api/realtime-arrival", async (req, res) => {
       if (dirFiltered.length > 0) arrivals = dirFiltered;
     }
 
-    // 갈래(분기) 필터: 상/하행이 같아도 노선이 물리적으로 두 갈래로 갈라지는 구간에서는
-    // 종착역이 아예 다른 방향으로 갈 수 있습니다. (예: 1호선 구로에서 경부선(→가산디지털단지·
-    // 금천구청·수원·서동탄·병점·천안·신창)과 경인선(→구일·부천·부평·동인천·인천)으로 분기)
-    // 경로(directionStops)에 특정 갈래를 나타내는 역명이 포함되어 있으면, 반대 갈래의
-    // 종착역으로 가는 열차는 제외합니다. 경로가 분기 이전 구간에서 끝나면(예: 용산→구로)
-    // 아무 갈래도 매칭되지 않으므로 필터 없이 전체가 그대로 나옵니다.
+    // 갈래(분기) 필터: 경로가 특정 분기 구간을 지나면, 해당 분기의 종착역행 열차만 표시합니다.
+    // (예: 경로에 가산디지털단지가 있으면 수원/서동탄/병점/천안/신창행만,
+    //  구일이 있으면 부평/동인천/인천행만 표시)
     if (dsRaw && arrivals.length > 0) {
       const pathStops = new Set(dsRaw.split(","));
-      const excludeTermini = getBranchExclusionTermini(pathStops);
-      if (excludeTermini.length > 0) {
+      const allowedTermini = getBranchAllowedTermini(pathStops);
+      if (allowedTermini.length > 0) {
         const branchFiltered = arrivals.filter((a) => {
-          const desc = a.lineName || "";
-          return !excludeTermini.some((t) => desc.includes(t));
+          const dest = a.destinationStation || "";
+          return allowedTermini.some((t) => dest.includes(t) || t.includes(dest));
         });
         if (branchFiltered.length > 0) arrivals = branchFiltered;
       }
