@@ -84,10 +84,10 @@ const BRANCH_GROUPS = [
   },
 ];
 
-/** 경로(pathStops)가 어느 분기 그룹에 속하는지 찾아, 해당 그룹의 허용 종착역명 목록을 반환합니다. */
-function getBranchAllowedTermini(pathStops) {
+/** 현재 역이 분기 구간에 있을 때만 해당 그룹의 허용 종착역명 목록을 반환합니다. */
+function getBranchAllowedTermini(currentStation, pathStops) {
   for (const group of BRANCH_GROUPS) {
-    if (group.markerStops.some((m) => pathStops.has(m))) {
+    if (group.markerStops.includes(currentStation)) {
       return group.termini;
     }
   }
@@ -165,8 +165,9 @@ app.get("/api/realtime-arrival", async (req, res) => {
     // (예: 경로에 가산디지털단지가 있으면 수원/서동탄/병점/천안/신창행만,
     //  구일이 있으면 부평/동인천/인천행만 표시)
     if (dsRaw && arrivals.length > 0) {
+      const currentStation = baseStationName(station);
       const pathStops = new Set(dsRaw.split(","));
-      const allowedTermini = getBranchAllowedTermini(pathStops);
+      const allowedTermini = getBranchAllowedTermini(currentStation, pathStops);
       if (allowedTermini.length > 0) {
         arrivals = arrivals.filter((a) => {
           const dest = a.destinationStation || "";
