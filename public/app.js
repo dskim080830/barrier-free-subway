@@ -175,14 +175,15 @@ async function fetchArrivalForStop(stop) {
 
 async function refreshAllArrivals() {
   const stopsWithMeta = currentStops.filter((s) => s.arrivalMeta);
-  const results = await Promise.all(stopsWithMeta.map(fetchArrivalForStop));
-  stopsWithMeta.forEach((stop, i) => {
-    if (results[i] !== null) {
-      stop.realtimeArrival = results[i];
-      stop._lastFetchTime = Date.now();
-    }
+  stopsWithMeta.forEach((stop) => {
+    fetchArrivalForStop(stop).then((result) => {
+      if (result !== null) {
+        stop.realtimeArrival = result;
+        stop._lastFetchTime = Date.now();
+        updateArrivalUI();
+      }
+    });
   });
-  updateArrivalUI();
 }
 
 function startArrivalPolling() {
