@@ -179,6 +179,13 @@ app.get("/api/realtime-arrival", async (req, res) => {
       }
     }
 
+    // 도착 시간 빠른 순으로 정렬
+    arrivals.sort((a, b) => {
+      const sa = a.remainingSeconds ?? 9999;
+      const sb = b.remainingSeconds ?? 9999;
+      return sa - sb;
+    });
+
     res.json({ ok: true, station, mock: USE_MOCK, arrivals });
   } catch (err) {
     res.status(500).json({ ok: false, reason: err.message });

@@ -79,9 +79,9 @@ const ODCLOUD_LIFT_API_KEY = process.env.ODCLOUD_LIFT_API_KEY || "";
 const ODCLOUD_LIFT_BASE_URL = "https://api.odcloud.kr/api/15130663/v1/uddi:74977fa3-2dd7-4ac3-8660-ef35b0815318";
 
 // 지하철 실시간 도착정보 (realtimeStationArrival) 전용 키/호스트
-// ⚠️ 이 API는 8088 포트가 아니라 별도 호스트(swopenAPI.seoul.go.kr)를 씁니다.
 const REALTIME_ARRIVAL_API_KEY = process.env.SEOUL_REALTIME_ARRIVAL_API_KEY || "446d4e786b64736b3631746a697164";
-const REALTIME_ARRIVAL_BASE_URL = "http://swopenAPI.seoul.go.kr/api/subway";
+const REALTIME_ARRIVAL_BASE_URL = "http://swopenapi.seoul.go.kr/api/subway";
+const REALTIME_ARRIVAL_FALLBACK_URL = "http://openapi.seoul.go.kr:8088";
 const REALTIME_ARRIVAL_SERVICE = "realtimeStationArrival";
 
 // ✅ 2026-07 실제 응답으로 확인된 필드명 (SeoulMetroFaciInfo):
@@ -194,6 +194,15 @@ async function callSeoulOpenApiRaw(baseUrl, apiKey, serviceName, startIndex, end
     const rows = Array.isArray(items) ? items : (items?.item || []);
     const tc = Number(data.response.body?.totalCount || (Array.isArray(rows) ? rows.length : 0));
     return { totalCount: tc, rows: Array.isArray(rows) ? rows : [] };
+  }
+
+  // (D) 최상위 RESULT형 (인증키 오류, 서버 장애 등)
+  if (data.RESULT) {
+    const code = data.RESULT.CODE;
+    if (code && code !== "INFO-000" && code !== "INFO-200") {
+      throw new Error(`서울열린데이터광장 API(${serviceName}) 오류: [${code}] ${data.RESULT.MESSAGE}`);
+    }
+    return { totalCount: 0, rows: [] };
   }
 
   console.error(`[seoulOpenApi][${serviceName}] 예상치 못한 응답 구조: ${JSON.stringify(data).slice(0, 500)}`);
@@ -475,10 +484,18 @@ async function fetchQuickExitInfoSeoul(stationName, lineLabel, { preferDirection
 
   let chosen = null;
   if (preferDirection) {
-    chosen = records.find((it) => it[f.direction] === preferDirection);
+    const normPref = normalizeStationNameForCompare(preferDirection);
+    chosen = records.find((it) => {
+      const d = normalizeStationNameForCompare(it[f.direction]);
+      return d === normPref || d.includes(normPref) || normPref.includes(d);
+    });
   }
   if (!chosen && excludeDirection) {
-    chosen = records.find((it) => it[f.direction] !== excludeDirection);
+    const normExcl = normalizeStationNameForCompare(excludeDirection);
+    chosen = records.find((it) => {
+      const d = normalizeStationNameForCompare(it[f.direction]);
+      return d !== normExcl && !d.includes(normExcl) && !normExcl.includes(d);
+    });
   }
   if (!chosen) chosen = records[0];
 
@@ -578,14 +595,27 @@ async function fetchRealtimeArrival(stationName, lineLabel, directionHints = [])
   if (USE_MOCK) return mockFetchRealtimeArrival(stationName, directionHints[0]);
 
   try {
-    const { rows } = await callSeoulOpenApiRaw(
-      REALTIME_ARRIVAL_BASE_URL,
-      REALTIME_ARRIVAL_API_KEY,
-      REALTIME_ARRIVAL_SERVICE,
-      0,
-      50,
-      [stationName]
-    );
+    let rows;
+    try {
+      ({ rows } = await callSeoulOpenApiRaw(
+        REALTIME_ARRIVAL_BASE_URL,
+        REALTIME_ARRIVAL_API_KEY,
+        REALTIME_ARRIVAL_SERVICE,
+        0,
+        50,
+        [stationName]
+      ));
+    } catch (primaryErr) {
+      console.warn(`[seoulOpenApi] 기본 호스트 실패(${primaryErr.message}), 폴백 호스트로 재시도합니다.`);
+      ({ rows } = await callSeoulOpenApiRaw(
+        REALTIME_ARRIVAL_FALLBACK_URL,
+        REALTIME_ARRIVAL_API_KEY,
+        REALTIME_ARRIVAL_SERVICE,
+        0,
+        50,
+        [stationName]
+      ));
+    }
 
     if (rows.length > 0) {
       console.log(`[seoulOpenApi][DEBUG][realtimeStationArrival] "${stationName}" 첫 row 예시:`, rows[0]);
@@ -908,10 +938,18 @@ async function fetchQuickExitInfo(stationName, lineLabel, { preferDirection, exc
 
     let chosen = null;
     if (preferDirection) {
-      chosen = records.find((it) => it[f.direction] === preferDirection);
+      const normPref = normalizeStationNameForCompare(preferDirection);
+      chosen = records.find((it) => {
+        const d = normalizeStationNameForCompare(it[f.direction]);
+        return d === normPref || d.includes(normPref) || normPref.includes(d);
+      });
     }
     if (!chosen && excludeDirection) {
-      chosen = records.find((it) => it[f.direction] !== excludeDirection);
+      const normExcl = normalizeStationNameForCompare(excludeDirection);
+      chosen = records.find((it) => {
+        const d = normalizeStationNameForCompare(it[f.direction]);
+        return d !== normExcl && !d.includes(normExcl) && !normExcl.includes(d);
+      });
     }
     if (!chosen) chosen = records[0];
 
