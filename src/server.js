@@ -65,26 +65,38 @@ app.get("/api/realtime-arrival", async (req, res) => {
     return res.status(400).json({ ok: false, reason: "station 파라미터(역명)가 필요합니다." });
   }
   try {
-    const { direction } = req.query;
-    const cacheKey = `${baseStationName(station)}|${line || ""}|${direction || ""}`;
+    const { direction, directionStops: dsRaw } = req.query;
+    const directionHints = [direction, ...(dsRaw ? dsRaw.split(",") : [])].filter(Boolean);
+    const cacheKey = `${baseStationName(station)}|${line || ""}`;
     const cached = arrivalCache.get(cacheKey);
     const now = Date.now();
 
+    let arrivals;
     if (cached && now - cached.at < ARRIVAL_CACHE_TTL_MS) {
-      return res.json({ ok: true, station, mock: USE_MOCK, arrivals: cached.arrivals, cached: true });
-    }
+      arrivals = cached.arrivals;
+    } else {
+      arrivals = await fetchRealtimeArrival(baseStationName(station), line || undefined);
 
-    const arrivals = await fetchRealtimeArrival(baseStationName(station), line || undefined, direction || undefined);
-
-    if (arrivals === null) {
-      // API 실패(호출 한도 초과 등): 너무 오래되지 않은 캐시가 있으면 그걸 반환
-      if (cached && now - cached.at < ARRIVAL_STALE_MAX_MS) {
-        return res.json({ ok: true, station, mock: USE_MOCK, arrivals: cached.arrivals, stale: true });
+      if (arrivals === null) {
+        if (cached && now - cached.at < ARRIVAL_STALE_MAX_MS) {
+          arrivals = cached.arrivals;
+        } else {
+          return res.json({ ok: false, station, arrivals: null, reason: "실시간 도착정보 API 호출 실패(일일 한도 초과 등)" });
+        }
+      } else {
+        arrivalCache.set(cacheKey, { arrivals, at: now });
       }
-      return res.json({ ok: false, station, arrivals: null, reason: "실시간 도착정보 API 호출 실패(일일 한도 초과 등)" });
     }
 
-    arrivalCache.set(cacheKey, { arrivals, at: now });
+    // 방향 필터: 경로 상의 역명 중 하나라도 trainLineNm에 포함되면 매칭
+    if (directionHints.length > 0 && arrivals.length > 0) {
+      const dirFiltered = arrivals.filter((a) => {
+        const desc = a.lineName || "";
+        return directionHints.some((hint) => desc.includes(hint));
+      });
+      if (dirFiltered.length > 0) arrivals = dirFiltered;
+    }
+
     res.json({ ok: true, station, mock: USE_MOCK, arrivals });
   } catch (err) {
     res.status(500).json({ ok: false, reason: err.message });
@@ -153,7 +165,7 @@ async function buildResponseFromOdsayPath(candidate) {
         const nextIdx = idx + 1;
         const nextStop = nextIdx < candidate.stops.length ? baseStationName(candidate.stops[nextIdx].name) : undefined;
         const dirStops = [];
-        for (let j = nextIdx; j < candidate.stops.length && dirStops.length < 3; j++) {
+        for (let j = nextIdx; j < candidate.stops.length && dirStops.length < 15; j++) {
           const sn = baseStationName(candidate.stops[j].name);
           if (sn !== name) dirStops.push(sn);
         }
@@ -320,7 +332,7 @@ app.get("/api/route", async (req, res) => {
         const nextIdx = idx + 1;
         const nextStopHint = nextIdx < result.path.length ? baseStationName(getStationName(result.path[nextIdx])) : undefined;
         const dirStops = [];
-        for (let j = nextIdx; j < result.path.length && dirStops.length < 3; j++) {
+        for (let j = nextIdx; j < result.path.length && dirStops.length < 15; j++) {
           const sn = baseStationName(getStationName(result.path[j]));
           if (sn !== baseStationName(station.name)) dirStops.push(sn);
         }

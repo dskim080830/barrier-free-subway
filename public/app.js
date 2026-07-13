@@ -81,31 +81,35 @@ function stopPolling() {
 const EXPRESS_STOP_PATTERNS = {
   "1호선": {
     "급행": {
-      "천안": "용산·영등포·안양·수원·오산·평택·천안",
-      "신창": "용산·영등포·안양·수원·오산·평택·천안·신창",
-      "서동탄": "용산·영등포·안양·수원·서동탄",
-      "병점": "용산·영등포·안양·수원·병점",
-      "수원": "용산·영등포·안양·수원",
-      "인천": "용산·영등포·부천·부평·인천",
-      "동인천": "용산·영등포·부천·부평·동인천",
-      "소요산": "용산·청량리·의정부·소요산",
+      "천안": "서울·용산·영등포·안양·수원·세류·오산·서정리·평택·성환·천안",
+      "신창": "서울·용산·영등포·안양·수원·세류·오산·서정리·평택·성환·천안·신창",
+      "서동탄": "서울·용산·영등포·안양·수원·세류·서동탄",
+      "병점": "서울·용산·영등포·안양·수원·세류·병점",
+      "수원": "서울·용산·영등포·안양·수원",
+      "인천": "서울·용산·영등포·부천·부평·주안·인천",
+      "동인천": "서울·용산·영등포·부천·부평·주안·인천·동인천",
+      "소요산": "서울·용산·청량리·의정부·양주·동두천중앙·소요산",
+      "광운대": "서울·용산·청량리·광운대",
+      "청량리": "서울·용산·청량리",
     },
     "특급": {
-      "천안": "용산·수원·평택·천안",
-      "신창": "용산·수원·평택·천안·신창",
+      "천안": "서울·용산·수원·평택·천안",
+      "신창": "서울·용산·수원·평택·천안·신창",
+    },
+  },
+  "9호선": {
+    "급행": {
+      "중앙보훈병원": "김포공항·당산·여의도·노량진·동작·고속터미널·신논현·선정릉·봉은사·종합운동장·삼성중앙·석촌·올림픽공원·중앙보훈병원",
+      "개화": "중앙보훈병원·올림픽공원·석촌·삼성중앙·종합운동장·봉은사·선정릉·신논현·고속터미널·동작·노량진·여의도·당산·김포공항·개화",
     },
   },
 };
 
-function extractStopInfo(lineName) {
-  if (!lineName) return "";
+function extractStopInfo(lineName, trainType) {
+  if (!lineName || !trainType) return "";
   const destMatch = lineName.match(/^(.+?)행/);
   if (!destMatch) return "";
   const dest = destMatch[1];
-
-  const typeMatch = lineName.match(/(급행|특급)/);
-  const trainType = typeMatch ? typeMatch[1] : "";
-  if (!trainType) return "";
 
   for (const [line, types] of Object.entries(EXPRESS_STOP_PATTERNS)) {
     const stops = types[trainType];
@@ -131,12 +135,20 @@ function renderArrivalItems(arrivals, stationName) {
       else if (a.trainStatus === "특급") badge = `<span class="express-badge express-badge--special">특급</span> `;
 
       const stopInfo = (a.trainStatus === "급행" || a.trainStatus === "특급") && a.lineName
-        ? extractStopInfo(a.lineName) : "";
+        ? extractStopInfo(a.lineName, a.trainStatus) : "";
 
       const pos = a.currentStation ? `(현재 ${a.currentStation})` : "";
-      const time = a.remainingSeconds != null && a.remainingSeconds > 0
-        ? `약 ${Math.ceil(a.remainingSeconds / 60)}분 후`
-        : (a.arrivalMessage || a.currentStatusMessage || "정보 없음");
+      const arrMsg = a.arrivalMessage || "";
+      const countMatch = arrMsg.match(/\[\d+\]번째\s*전역/);
+      let time;
+      if (a.remainingSeconds != null && a.remainingSeconds > 0) {
+        const mins = Math.ceil(a.remainingSeconds / 60);
+        time = countMatch ? `${countMatch[0]} · 약 ${mins}분 후` : `약 ${mins}분 후`;
+      } else if (countMatch) {
+        time = countMatch[0];
+      } else {
+        time = arrMsg || a.currentStatusMessage || "정보 없음";
+      }
       return `
         <li class="arrival-item">
           <span class="arrival-item__line">🚇 ${badge}${trainInfo}</span>
@@ -186,6 +198,7 @@ async function fetchArrivalForStop(stop) {
   if (!stop.arrivalMeta) return null;
   const params = new URLSearchParams({ station: stop.name, line: stop.arrivalMeta.line });
   if (stop.arrivalMeta.direction) params.set("direction", stop.arrivalMeta.direction);
+  if (stop.arrivalMeta.directionStops?.length) params.set("directionStops", stop.arrivalMeta.directionStops.join(","));
   try {
     const res = await fetch(`/api/realtime-arrival?${params}`);
     const data = await res.json();
@@ -286,7 +299,7 @@ function renderResult(data) {
         const arrLine = stop.arrivalMeta.line || "";
         const arrColor = lineColorByLabel(arrLine);
         const dirStops = stop.arrivalMeta.directionStops || [];
-        const dirLabel = dirStops.length > 0 ? ` (${dirStops.join(" · ")} 방면)` : "";
+        const dirLabel = dirStops.length > 0 ? ` (${dirStops.slice(0, 3).join(" · ")} 방면)` : "";
         const hasArrival = stop.realtimeArrival && stop.realtimeArrival.length > 0;
         arrivalSection = `
           <div class="arrival-header" style="color:${arrColor};border-left:3px solid ${arrColor};padding-left:8px;">

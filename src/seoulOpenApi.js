@@ -441,8 +441,17 @@ async function fetchQuickExitInfoSeoul(stationName, lineLabel, { preferDirection
     items = rows.filter((r) => String(r[f.stationName] || "").includes(stationName) || stationName.includes(String(r[f.stationName] || "")));
   }
   if (lineLabel) {
-    const byLine = items.filter((r) => String(r[f.lineName] || "").includes(lineLabel) || lineLabel.includes(String(r[f.lineName] || "")));
-    if (byLine.length > 0) items = byLine;
+    const normLabel = normalizeLineLabel(lineLabel);
+    const byLine = items.filter((r) => {
+      const rLine = normalizeLineLabel(r[f.lineName]);
+      return rLine === normLabel || rLine.includes(normLabel) || normLabel.includes(rLine);
+    });
+    if (byLine.length > 0) {
+      items = byLine;
+    } else {
+      console.warn(`[seoulOpenApi][getFstExit] "${stationName}" ${lineLabel} 노선의 빠른하차정보가 없습니다. (다른 노선 데이터 사용 방지)`);
+      return null;
+    }
   }
 
   if (items.length === 0) {
@@ -556,11 +565,11 @@ function findArrivalMessageByPattern(row) {
  * 특정 역의 실시간 지하철 도착정보를 가져옵니다.
  * @param {string} stationName - 역명 (예: "강남")
  * @param {string} [lineLabel] - 노선명 (예: "4호선"). 지정하면 해당 노선 열차만 반환합니다.
- * @param {string} [directionHint] - 진행 방향 힌트 (다음 역명). 지정하면 해당 방면 열차만 반환합니다.
+ * @param {string[]} [directionHints] - 진행 방향 힌트 역명 배열. 하나라도 포함되면 매칭합니다.
  */
-async function fetchRealtimeArrival(stationName, lineLabel, directionHint) {
+async function fetchRealtimeArrival(stationName, lineLabel, directionHints = []) {
   if (!stationName) return [];
-  if (USE_MOCK) return mockFetchRealtimeArrival(stationName, directionHint);
+  if (USE_MOCK) return mockFetchRealtimeArrival(stationName, directionHints[0]);
 
   try {
     const { rows } = await callSeoulOpenApiRaw(
@@ -599,10 +608,11 @@ async function fetchRealtimeArrival(stationName, lineLabel, directionHint) {
     }
 
     // 방향 필터: trainLineNm에 "가산디지털단지방면" 같은 방향 정보가 포함됨
-    if (directionHint && filtered.length > 0) {
+    // 경로 상의 여러 역명 중 하나라도 매칭되면 통과 (1호선 구로 분기 등 대응)
+    if (directionHints.length > 0 && filtered.length > 0) {
       const dirFiltered = filtered.filter((r) => {
         const desc = String(r.trainLineNm || "");
-        return desc.includes(directionHint);
+        return directionHints.some((hint) => desc.includes(hint));
       });
       if (dirFiltered.length > 0) filtered = dirFiltered;
     }
