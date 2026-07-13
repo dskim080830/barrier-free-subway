@@ -526,6 +526,7 @@ const LINE_LABEL_TO_SUBWAY_ID = {
   "경강선": "1081", "우이신설선": "1092", "서해선": "1093",
   "신림선": "1095", "GTX-A": "1032",
   // 표기가 다른 이름들 (ODsay·내부 데이터가 주는 변형 이름)
+  "경부선": "1001", "경인선": "1001", "경원선": "1001",
   "경의선": "1063", "중앙선": "1063",
   "인천국제공항철도": "1065", "인천국제공항선": "1065",
   "분당선": "1075", "수인선": "1075",
@@ -636,9 +637,7 @@ async function fetchRealtimeArrival(stationName, lineLabel, directionHints = [])
       if (targetSubwayId) {
         filtered = filtered.filter((r) => String(r.subwayId) === targetSubwayId);
       } else {
-        // subwayId를 못 찾은 노선명 — 잘못된 노선이 섞여 나가느니 비우고 로그를 남깁니다.
-        console.warn(`[seoulOpenApi][realtimeStationArrival] 노선명 "${lineLabel}"의 subwayId를 찾지 못했습니다.`);
-        filtered = filtered.filter((r) => String(r.trainLineNm || "").includes(lineLabel));
+        console.warn(`[seoulOpenApi][realtimeStationArrival] 노선명 "${lineLabel}"의 subwayId를 찾지 못했습니다. 노선 필터를 건너뜁니다.`);
       }
     }
 
