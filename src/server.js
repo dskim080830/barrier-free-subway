@@ -88,12 +88,41 @@ app.get("/api/realtime-arrival", async (req, res) => {
       }
     }
 
-    // 방향 필터: 경로 상의 역명 중 하나라도 trainLineNm에 포함되면 매칭
+    // 방향 필터
+    // ⚠️ 예전 방식(경로 상의 역명이 trainLineNm에 포함되면 매칭)은 1호선처럼
+    //   한 방향(하행)에 종착역이 여러 개로 갈라지는 노선(인천/신창/서동탄/구로 등)에서
+    //   문제가 됐습니다. trainLineNm(예: "인천행 - 노량진방면 급행열차")에는 그 열차의
+    //   "종착역"과 "다음 정차역"만 들어있어서, 목적지행이 아닌데도 경로상 먼 역명
+    //   (예: 최종 목적지가 인천일 때의 "인천")과 우연히 일치하는 열차만 남고,
+    //   같은 방향으로 가지만 종착역이 다른 열차(서동탄행, 신창행, 구로행 등)는
+    //   전부 걸러져 버렸습니다.
+    //
+    // ✅ 수정: 먼저 "바로 다음 역명(direction)"이 trainLineNm에 포함된 열차를 찾아
+    //   그 열차(들)의 상/하행 방향(updnLine)을 확인합니다. 목적지와 상관없이
+    //   "같은 상/하행 방향"인 열차는 전부 포함시켜, 분기되는 종착역도 모두 나오도록 합니다.
+    //   (예: 용산 → 구로면 하행 전체 → 인천행/구로행/서동탄행/천안행/신창행/수원행 모두 표시)
+    //   바로 다음 역명으로 방향을 못 찾으면(연결 편차 등) 기존 방식으로 폴백합니다.
     if (directionHints.length > 0 && arrivals.length > 0) {
-      const dirFiltered = arrivals.filter((a) => {
-        const desc = a.lineName || "";
-        return directionHints.some((hint) => desc.includes(hint));
-      });
+      const nextStopHint = direction; // 경로상 바로 다음 역명 (가장 신뢰도 높은 힌트)
+      const updnLineSet = new Set();
+      if (nextStopHint) {
+        for (const a of arrivals) {
+          const desc = a.lineName || "";
+          if (a.updnLine && desc.includes(nextStopHint)) updnLineSet.add(a.updnLine);
+        }
+      }
+
+      let dirFiltered;
+      if (updnLineSet.size > 0) {
+        // 목적지(종착역) 상관없이 같은 상/하행 방향이면 전부 포함
+        dirFiltered = arrivals.filter((a) => a.updnLine && updnLineSet.has(a.updnLine));
+      } else {
+        // 상/하행을 못 찾았으면(직행 다음역 매칭 실패) 기존 방식으로 폴백
+        dirFiltered = arrivals.filter((a) => {
+          const desc = a.lineName || "";
+          return directionHints.some((hint) => desc.includes(hint));
+        });
+      }
       if (dirFiltered.length > 0) arrivals = dirFiltered;
     }
 

@@ -607,13 +607,33 @@ async function fetchRealtimeArrival(stationName, lineLabel, directionHints = [])
       }
     }
 
-    // 방향 필터: trainLineNm에 "가산디지털단지방면" 같은 방향 정보가 포함됨
-    // 경로 상의 여러 역명 중 하나라도 매칭되면 통과 (1호선 구로 분기 등 대응)
+    // 방향 필터
+    // ⚠️ 경로상의 여러 역명(directionHints)이 trainLineNm에 포함되면 통과시키는 방식은
+    //   1호선처럼 하행 한 방향에 종착역이 여러 개로 갈라지는 노선(인천/신창/서동탄/구로 등)에서
+    //   "목적지행"이 아닌데 우연히 먼 역명(예: 최종 목적지가 인천일 때의 "인천")과 일치하는
+    //   열차만 남기고, 같은 방향인 다른 종착역행 열차는 걸러버리는 문제가 있었습니다.
+    //   그래서 먼저 directionHints[0](경로상 바로 다음 역)로 상/하행(updnLine)을 확정한 뒤,
+    //   같은 상/하행이면 종착역과 무관하게 전부 포함시킵니다. 실패 시 기존 방식으로 폴백합니다.
     if (directionHints.length > 0 && filtered.length > 0) {
-      const dirFiltered = filtered.filter((r) => {
-        const desc = String(r.trainLineNm || "");
-        return directionHints.some((hint) => desc.includes(hint));
-      });
+      const nextStopHint = directionHints[0];
+      const updnLineSet = new Set();
+      if (nextStopHint) {
+        for (const r of filtered) {
+          const desc = String(r.trainLineNm || "");
+          const updn = r[REALTIME_ARRIVAL_FIELD_MAP.updnLine];
+          if (updn && desc.includes(nextStopHint)) updnLineSet.add(updn);
+        }
+      }
+
+      let dirFiltered;
+      if (updnLineSet.size > 0) {
+        dirFiltered = filtered.filter((r) => updnLineSet.has(r[REALTIME_ARRIVAL_FIELD_MAP.updnLine]));
+      } else {
+        dirFiltered = filtered.filter((r) => {
+          const desc = String(r.trainLineNm || "");
+          return directionHints.some((hint) => desc.includes(hint));
+        });
+      }
       if (dirFiltered.length > 0) filtered = dirFiltered;
     }
 
