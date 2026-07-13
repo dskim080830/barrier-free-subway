@@ -1,0 +1,21 @@
+{
+  "name": "barrier-free-subway",
+  "version": "1.0.0",
+  "description": "계단 없는 역만 골라가는 교통약자(배리어프리) 환승 경로 웹 - BFS 기반",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "import-stations": "node scripts/import_stations.js"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
