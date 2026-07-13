@@ -84,11 +84,13 @@ const BRANCH_GROUPS = [
   },
 ];
 
-/** 현재 역이 분기 구간에 있을 때만 해당 그룹의 허용 종착역명 목록을 반환합니다. */
+/** 현재 역이 분기 구간에 있고, 경로가 같은 분기 방향으로 진행할 때만 허용 종착역명을 반환합니다. */
 function getBranchAllowedTermini(currentStation, pathStops) {
   for (const group of BRANCH_GROUPS) {
     if (group.markerStops.includes(currentStation)) {
-      return group.termini;
+      const pathGoesIntoBranch = group.markerStops.some((m) => m !== currentStation && pathStops.has(m));
+      if (pathGoesIntoBranch) return group.termini;
+      return [];
     }
   }
   return [];
