@@ -449,8 +449,14 @@ async function fetchQuickExitInfoSeoul(stationName, lineLabel, { preferDirection
     if (byLine.length > 0) {
       items = byLine;
     } else {
-      console.warn(`[seoulOpenApi][getFstExit] "${stationName}" ${lineLabel} 노선의 빠른하차정보가 없습니다. (다른 노선 데이터 사용 방지)`);
-      return null;
+      // ⚠️ 예전에는 여기서 곧바로 null을 반환해서(다른 노선 데이터가 섞이는 걸
+      //   막기 위함) 노선명 표기가 API와 살짝만 달라도(예: "수도권 1호선" vs "경부선")
+      //   승하차 위치 안내가 통째로 안 나왔습니다. 완전히 안 보여주는 것보다
+      //   "이 역에 있는 데이터"라도 보여주는 게 나으므로, 역명 일치 데이터가 있으면
+      //   그대로 사용하고 로그만 남깁니다.
+      console.warn(
+        `[seoulOpenApi][getFstExit] "${stationName}" ${lineLabel} 노선과 정확히 일치하는 데이터가 없어 해당 역의 다른 노선 데이터로 대체합니다.`
+      );
     }
   }
 

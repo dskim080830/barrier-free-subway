@@ -59,6 +59,41 @@ const arrivalCache = new Map(); // key -> { arrivals, at }
 const ARRIVAL_CACHE_TTL_MS = 25 * 1000;
 const ARRIVAL_STALE_MAX_MS = 10 * 60 * 1000;
 
+// ── 1호선 구로 분기 ───────────────────────────────────────────────
+// 구로에서 경부선(수원 방면)과 경인선(인천 방면)으로 갈라집니다. 두 갈래 모두
+// "하행"이라 상/하행만으로는 구분이 안 되므로, 경로가 지나는 역명으로 갈래를
+// 판별하고, 반대 갈래의 종착역행 열차는 실시간 도착정보에서 제외합니다.
+// (다른 노선/구간에 비슷한 분기가 생기면 이 배열에 그룹을 추가하면 됩니다.)
+const BRANCH_GROUPS = [
+  {
+    // 경부선 방면 (구로 이남)
+    markerStops: [
+      "가산디지털단지", "금천구청", "석수", "관악", "안양", "명학", "금정",
+      "군포", "당정", "의왕", "성균관대", "화서", "수원", "세류", "병점",
+      "서동탄", "천안", "신창",
+    ],
+    termini: ["수원", "서동탄", "병점", "천안", "신창"],
+  },
+  {
+    // 경인선 방면 (구로 이남)
+    markerStops: [
+      "구일", "개봉", "오류동", "온수", "역곡", "소사", "부천", "송내",
+      "부평", "백운", "동암", "간석", "주안", "동인천", "인천",
+    ],
+    termini: ["부평", "동인천", "인천"],
+  },
+];
+
+/** 경로(pathStops)가 어느 분기 그룹에 속하는지 찾아, 반대 그룹의 종착역명 목록을 반환합니다. */
+function getBranchExclusionTermini(pathStops) {
+  for (const group of BRANCH_GROUPS) {
+    if (group.markerStops.some((m) => pathStops.has(m))) {
+      return BRANCH_GROUPS.filter((g) => g !== group).flatMap((g) => g.termini);
+    }
+  }
+  return [];
+}
+
 app.get("/api/realtime-arrival", async (req, res) => {
   const { station, line } = req.query;
   if (!station) {
@@ -124,6 +159,24 @@ app.get("/api/realtime-arrival", async (req, res) => {
         });
       }
       if (dirFiltered.length > 0) arrivals = dirFiltered;
+    }
+
+    // 갈래(분기) 필터: 상/하행이 같아도 노선이 물리적으로 두 갈래로 갈라지는 구간에서는
+    // 종착역이 아예 다른 방향으로 갈 수 있습니다. (예: 1호선 구로에서 경부선(→가산디지털단지·
+    // 금천구청·수원·서동탄·병점·천안·신창)과 경인선(→구일·부천·부평·동인천·인천)으로 분기)
+    // 경로(directionStops)에 특정 갈래를 나타내는 역명이 포함되어 있으면, 반대 갈래의
+    // 종착역으로 가는 열차는 제외합니다. 경로가 분기 이전 구간에서 끝나면(예: 용산→구로)
+    // 아무 갈래도 매칭되지 않으므로 필터 없이 전체가 그대로 나옵니다.
+    if (dsRaw && arrivals.length > 0) {
+      const pathStops = new Set(dsRaw.split(","));
+      const excludeTermini = getBranchExclusionTermini(pathStops);
+      if (excludeTermini.length > 0) {
+        const branchFiltered = arrivals.filter((a) => {
+          const desc = a.lineName || "";
+          return !excludeTermini.some((t) => desc.includes(t));
+        });
+        if (branchFiltered.length > 0) arrivals = branchFiltered;
+      }
     }
 
     res.json({ ok: true, station, mock: USE_MOCK, arrivals });
